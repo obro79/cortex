@@ -188,6 +188,7 @@ Deliverables:
 
 - `source_chunks`, `embedding_records`, and `index_jobs` tables/contracts.
 - Source-aware chunking for fixture Slack threads, Linear issues, GitHub PRs, repo docs, and OCR text.
+- Versioned retrieval config defaults from `docs/architecture/adrs/005-hybrid-retrieval-stack/config-and-tuning.md`.
 - Postgres full-text indexing.
 - Deterministic embedding provider for local tests.
 - Qdrant adapter interface with local/test implementation.
@@ -213,6 +214,7 @@ Deliverables:
 - Postgres full-text search for v1 lexical retrieval.
 - Qdrant vector search with provider-neutral embeddings.
 - Ranking by relevance, recency, source authority, relationship strength, and permission.
+- Retrieval config version recorded on evidence packs and eval runs.
 - Evidence pack format:
   - claims,
   - citations,

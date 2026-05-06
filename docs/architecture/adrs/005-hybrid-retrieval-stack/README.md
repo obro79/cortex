@@ -54,8 +54,14 @@ source-aware ranking, and optional reranking to produce cited evidence packs.
 - Semantic recall tests for paraphrased architecture decisions.
 - Index freshness/source coverage tests.
 
+## Configuration And Tuning
+
+Retrieval knobs are versioned configuration, not scattered constants. Chunk
+sizes, overlap, embedding model/dimensions, candidate limits, ranking weights,
+gate thresholds, and token budgets are defined in
+[`config-and-tuning.md`](config-and-tuning.md).
+
 ## How This Maps From CortexG
 
 `cortexg` has deterministic scoring plus optional embeddings. Cortex keeps the
 scoring dimensions but moves retrieval into real lexical/vector indexes.
-

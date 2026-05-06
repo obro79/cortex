@@ -357,6 +357,9 @@ Ranking dimensions:
 - conflict/staleness signals.
 
 Retrieval must return citations. It should not dump broad memory into the agent.
+Chunk sizes, overlap, embedding settings, candidate limits, ranking weights,
+gate thresholds, and token budgets are versioned retrieval configuration. See
+[`ADR-005 config and tuning`](adrs/005-hybrid-retrieval-stack/config-and-tuning.md).
 
 ## Retrieval Evaluation Strategy
 
