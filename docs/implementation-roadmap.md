@@ -114,84 +114,94 @@ Validation:
 - Fixture seed and pipeline-run smoke test.
 - Cache, rate-limit, scheduler, and feature-flag contracts have local defaults and do not require Redis, Temporal, or Kubernetes.
 
-## Phase 1: Slack Wedge Connector
+## Phase 1: Dev Workbench And Deterministic Fixtures
 
-Goal: make Slack the first high-value source because engineering decisions and diagrams are buried there.
-
-Deliverables:
-
-- Slack OAuth install flow.
-- Workspace/team/channel selection.
-- Backfill selected channels.
-- Slack Events API intake for messages, edits, deletes, files, links, and thread replies.
-- Raw Slack event persistence.
-- Kafka publication keyed by workspace and Slack thread/message object.
-- Cursor and retry model.
-- Thread reconstruction.
-- File/link metadata extraction.
-- Source coverage for freshness and ingestion lag.
-
-Validation:
-
-- Backfill fixture test.
-- Webhook fixture test.
-- Replay raw events into source objects.
-- Cursor resume test.
-- Failed event retry/deadletter test.
-
-## Phase 2: Slack Decision And Diagram Extraction
-
-Goal: turn Slack from raw messages into useful engineering context.
+Goal: visually test the full reduced v1 loop before live connectors exist.
 
 Deliverables:
 
-- Source objects for messages, threads, files, diagrams, links.
-- Source files with object-storage pointers, MIME type, filename, Slack permalink, thread/message references, and OCR text.
-- Semantic artifacts:
-  - decision,
-  - implementation constraint,
-  - diagram reference,
-  - risk,
-  - open question,
-  - owner note,
-  - stale assumption.
-- Basic classifier/extractor interface.
-- Citation links back to Slack permalink, thread, file, and timestamp.
-- Confidence scoring.
+- `GET /dev/workbench` internal UI, disabled unless `CORTEX_DEV_WORKBENCH_ENABLED=true`.
+- `POST /dev/fixtures/reset` and `POST /dev/fixtures/seed`.
+- `POST /dev/pipeline/run` and `GET /dev/pipeline/runs/{run_id}`.
+- `POST /dev/retrieval/query`.
+- `GET /dev/evidence-packs/{id}`.
+- `POST /dev/evals/run`.
+- Deterministic fixture providers for Slack, Linear, GitHub, repo docs, and diagram/OCR inputs.
+- Pipeline timeline: seed, ingest, Kafka event, normalize, chunk/OCR, embed, index, link, retrieve, gate.
+- Retrieval inspector: query plan, filters, FTS candidates, vector candidates, merged candidates, relationships, final ranking.
+- Evidence-pack viewer: claims, citations, stale/conflicting evidence, source coverage, token budget, gate status.
 
 Validation:
 
-- Golden Slack thread fixtures.
-- Extraction tests for decisions, diagrams, constraints, and open questions.
-- Citation integrity tests.
-- No unsupported source shape breaks the pipeline.
+- Dev endpoints are unavailable unless enabled.
+- Fixture seed creates expected raw events, source objects, source files, chunks, embeddings, relationships, and evidence packs.
+- Pipeline run is idempotent and traceable by generated IDs.
+- Mock `COR-123` query returns Slack decision, diagram OCR, GitHub PR, Linear blocker, stale Redis doc, and `block`.
+- Eval panel reports Recall@K, MRR, citation accuracy, conflict detection, gate accuracy, and latency.
 
-## Phase 3: Linear + GitHub + Repo Docs
+## Phase 2: Raw Event Pipeline
 
-Goal: connect task intent and implementation evidence to Slack decisions.
+Goal: persist provider-shaped input and move lightweight pointers through Kafka.
 
 Deliverables:
 
-- Linear OAuth or API key connector.
-- Linear issues, comments, projects, labels, statuses, assignees.
-- GitHub App/OAuth connector.
-- GitHub issues, PRs, reviews, comments, commits, changed files.
-- Repo docs importer for markdown, diagrams, ADRs, and architecture docs.
-- Relationship builder:
-  - Linear issue to GitHub PR,
-  - Slack thread to Linear issue,
-  - Slack thread to GitHub PR,
-  - docs to code paths,
-  - diagrams to source files/components.
+- `raw_events` table and Pydantic contract.
+- Payload storage interface for raw payload refs and hashes.
+- `PipelineEventEnvelope` publisher for `raw_event.persisted`.
+- Fixture ingestion path that creates raw events without real OAuth.
+- Normalization worker consumer skeleton that loads raw events by pointer.
+- Idempotency keys, retry fields, deadletter records, and trace IDs.
 
 Validation:
 
-- Provider fixture tests.
-- Relationship inference tests.
-- End-to-end retrieval across Slack, Linear, GitHub, and docs.
-- Source coverage reports missing or stale providers without crashing retrieval.
+- Raw event contract tests.
+- Pipeline envelope validation tests.
+- Duplicate fixture events no-op by idempotency key.
+- Failed publish/consume paths update retry/deadletter state.
+- Raw events can be replayed into the next stage.
 
-## Phase 4: Retrieval And Evidence Packs
+## Phase 3: Normalization And Source Objects
+
+Goal: turn provider-shaped raw events into provider-neutral Cortex objects.
+
+Deliverables:
+
+- `source_objects` and `source_files` tables/contracts.
+- Normalizers for fixture Slack threads/messages/files, Linear issues, GitHub PRs, and repo docs.
+- Content hashes and normalization versions.
+- Source file metadata and OCR text fields for fixture diagrams.
+- `source_object.upserted` and `source_file.fetched` events.
+- Basic deterministic relationships from fixture IDs, URLs, PR numbers, file paths, and issue IDs.
+
+Validation:
+
+- Raw fixture events normalize into stable source object IDs.
+- Replaying the same raw event is idempotent.
+- Content hash changes produce updates; unchanged content no-ops.
+- Normalized objects are provider-neutral enough for chunking to ignore raw payload shape.
+
+## Phase 4: Chunking And Indexing Base
+
+Goal: make normalized objects searchable through lexical and deterministic vector paths.
+
+Deliverables:
+
+- `source_chunks`, `embedding_records`, and `index_jobs` tables/contracts.
+- Source-aware chunking for fixture Slack threads, Linear issues, GitHub PRs, repo docs, and OCR text.
+- Postgres full-text indexing.
+- Deterministic embedding provider for local tests.
+- Qdrant adapter interface with local/test implementation.
+- `source_chunk.upserted`, `embedding.requested`, `embedding.completed`, `index.requested`, and `index.completed` events.
+
+Validation:
+
+- Chunking version tests.
+- Chunk citation tests.
+- Postgres FTS smoke tests.
+- Deterministic embedding repeatability tests.
+- Index jobs are idempotent by target, hash, and version.
+
+## Phase 5: Retrieval And Evidence Packs
 
 Goal: return task-specific, cited context instead of broad memory dumps.
 
@@ -220,7 +230,7 @@ Validation:
 - Max-token budget tests.
 - Evidence citations always resolve to source objects.
 
-## Phase 5: Context Gate
+## Phase 6: Context Gate
 
 Goal: Cortex can warn or block agent implementation when high-impact context is unsafe.
 
@@ -248,7 +258,7 @@ Validation:
 - Clear, current evidence returns `allow`.
 - Gate output is compact and cited.
 
-## Phase 6: Human-Approved Canonical Memory
+## Phase 7: Human-Approved Canonical Memory
 
 Goal: agent proposes, human approves, Cortex remembers.
 
@@ -272,7 +282,57 @@ Validation:
 - Superseded/stale evidence is visible but ranked lower.
 - Agent cannot silently create canonical decisions without approval.
 
-## Phase 7: Permissions And Security
+## Phase 8: Real Slack Connector
+
+Goal: replace fixture Slack ingestion with the first real source after the core loop works.
+
+Deliverables:
+
+- Slack OAuth install flow.
+- Workspace/team/channel selection.
+- Backfill selected channels.
+- Slack Events API intake for messages, edits, deletes, files, links, and thread replies.
+- Raw Slack event persistence using the same `raw_events` and `raw_event.persisted` path as fixtures.
+- Cursor and retry model.
+- Thread reconstruction.
+- File/link metadata extraction.
+- Source coverage for freshness and ingestion lag.
+
+Validation:
+
+- Backfill fixture test.
+- Webhook fixture test.
+- Replay raw Slack events into source objects.
+- Cursor resume test.
+- Failed event retry/deadletter test.
+- Real Slack data reaches the same retrieval/gate path proven by fixtures.
+
+## Phase 9: Linear + GitHub + Repo Docs
+
+Goal: connect task intent and implementation evidence to Slack decisions.
+
+Deliverables:
+
+- Linear OAuth or API key connector.
+- Linear issues, comments, projects, labels, statuses, assignees.
+- GitHub App/OAuth connector.
+- GitHub issues, PRs, reviews, comments, commits, changed files.
+- Repo docs importer for markdown, diagrams, ADRs, and architecture docs.
+- Relationship builder:
+  - Linear issue to GitHub PR,
+  - Slack thread to Linear issue,
+  - Slack thread to GitHub PR,
+  - docs to code paths,
+  - diagrams to source files/components.
+
+Validation:
+
+- Provider fixture tests.
+- Relationship inference tests.
+- End-to-end retrieval across Slack, Linear, GitHub, and docs.
+- Source coverage reports missing or stale providers without crashing retrieval.
+
+## Phase 10: Permissions And Security
 
 Goal: make production team usage credible.
 
@@ -293,7 +353,7 @@ Validation:
 - Source coverage can safely report excluded counts.
 - Security review before real customer data.
 
-## Phase 8: Observability And Operations
+## Phase 11: Observability And Operations
 
 Goal: operators can trust freshness and recover from failures.
 
@@ -327,7 +387,7 @@ Validation:
 - Redaction tests prevent logs/traces from including source snippets, OAuth tokens, private URLs, raw file contents, or embeddings.
 - Alert-rule simulations cover Kafka lag, deadletters, retrieval failures, and connector failure.
 
-## Phase 8.25: Runtime Deployment
+## Phase 12: Runtime Deployment
 
 Goal: package Cortex for simple beta deployment without requiring Kubernetes.
 
@@ -346,7 +406,7 @@ Validation:
 - Health/readiness checks fail clearly when required dependencies are missing.
 - Deployment docs state which services can scale horizontally.
 
-## Phase 8.4: Layer-Later Platform Components
+## Phase 13: Layer-Later Platform Components
 
 Goal: add production platform components only where they protect real beta
 usage or make operations materially easier.
@@ -375,31 +435,7 @@ Validation:
 - Admin actions are audited and permission-gated.
 - Feature flags default to safe production values.
 
-## Phase 8.5: Dev Workbench
-
-Goal: visually test the pipeline with deterministic mock data before live connectors are complete.
-
-Deliverables:
-
-- `GET /dev/workbench` internal UI, disabled unless `CORTEX_DEV_WORKBENCH_ENABLED=true`.
-- `POST /dev/fixtures/reset` and `POST /dev/fixtures/seed`.
-- `POST /dev/pipeline/run` and `GET /dev/pipeline/runs/{run_id}`.
-- `POST /dev/retrieval/query`.
-- `GET /dev/evidence-packs/{id}`.
-- `POST /dev/evals/run`.
-- Pipeline timeline: seed, ingest, Kafka event, normalize, chunk/OCR, embed, index, link, retrieve, gate.
-- Retrieval inspector: query plan, filters, FTS candidates, vector candidates, merged candidates, relationships, final ranking.
-- Evidence-pack viewer: claims, citations, stale/conflicting evidence, source coverage, token budget, gate status.
-
-Validation:
-
-- Dev endpoints are unavailable unless enabled.
-- Fixture seed creates expected raw events, source objects, source files, chunks, embeddings, relationships, and evidence packs.
-- Pipeline run is idempotent and traceable by generated IDs.
-- Mock `COR-123` query returns Slack decision, diagram OCR, GitHub PR, Linear blocker, stale Redis doc, and `block`.
-- Eval panel reports Recall@K, MRR, citation accuracy, conflict detection, gate accuracy, and latency.
-
-## Phase 9: Minimal Web UI
+## Phase 14: Minimal Web UI
 
 Goal: audit and inspect, not replace the agent workflow.
 
