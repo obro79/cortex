@@ -5,3 +5,6 @@ notes, and run logs for the production skeleton.
 
 Phase source of truth: [`../implementation-roadmap.md`](../implementation-roadmap.md#phase-0-production-skeleton)
 
+Current detailed plan:
+
+- [`plan.md`](plan.md)
