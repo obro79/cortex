@@ -8,3 +8,6 @@ Phase source of truth: [`../implementation-roadmap.md`](../implementation-roadma
 Current detailed plan:
 
 - [`plan.md`](plan.md)
+- [`autoplan-review.md`](autoplan-review.md)
+- [`implementation-checklist.md`](implementation-checklist.md)
+- [`test-plan.md`](test-plan.md)
