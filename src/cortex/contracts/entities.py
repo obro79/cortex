@@ -6,14 +6,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cortex.contracts.enums import (
     ApprovalStatus,
+    BackfillJobStatus,
     ContextGateStatus,
     DeletionRequestStatus,
     EmbeddingJobStatus,
     EvidencePackStatus,
     IndexJobStatus,
+    OAuthInstallationStatus,
+    ProviderCursorStatus,
     RawEventStatus,
+    SecretRefStatus,
     SourceChunkStatus,
+    SourceConnectionStatus,
     SourceObjectStatus,
+    WebhookDeliveryStatus,
 )
 from cortex.contracts.ids import JsonObject
 
@@ -275,3 +281,96 @@ class DeletionTombstone(EntityModel):
     external_object_key_hash: str | None = None
     deleted_at: datetime
     retention_expires_at: datetime | None = None
+
+
+class SecretRef(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    purpose: str
+    external_secret_id: str
+    key_version: str
+    status: SecretRefStatus
+    metadata_json: JsonObject = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class OAuthInstallation(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    provider_workspace_id: str
+    enterprise_id: str | None = None
+    bot_user_id: str | None = None
+    installing_actor_id: str | None = None
+    secret_ref_id: str
+    scopes_json: JsonObject = Field(default_factory=dict)
+    provider_metadata_json: JsonObject = Field(default_factory=dict)
+    status: OAuthInstallationStatus
+    health_json: JsonObject = Field(default_factory=dict)
+    installed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SourceConnection(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    oauth_installation_id: str
+    source_type: str
+    external_source_id: str
+    display_name_hash: str | None = None
+    selected: bool = True
+    status: SourceConnectionStatus
+    provider_metadata_json: JsonObject = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class WebhookDelivery(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    delivery_id: str
+    event_id: str | None = None
+    signature_status: str
+    status: WebhookDeliveryStatus
+    source_connection_id: str | None = None
+    raw_event_id: str | None = None
+    received_at: datetime
+    updated_at: datetime
+    error_code: str | None = None
+    trace_id: str | None = None
+
+
+class BackfillJob(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    source_connection_id: str
+    status: BackfillJobStatus
+    cursor_id: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    attempt_count: int = Field(default=0, ge=0)
+    last_error_code: str | None = None
+    metadata_json: JsonObject = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProviderCursor(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    source_connection_id: str
+    cursor_type: str
+    cursor_value: str | None = None
+    high_watermark: str | None = None
+    status: ProviderCursorStatus
+    last_advanced_at: datetime | None = None
+    metadata_json: JsonObject = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime

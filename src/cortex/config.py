@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     cortex_dev_workbench_enabled: bool = Field(
         default=False, alias="CORTEX_DEV_WORKBENCH_ENABLED"
     )
+    cortex_slack_connector_enabled: bool = Field(
+        default=False, alias="CORTEX_SLACK_CONNECTOR_ENABLED"
+    )
+    slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")

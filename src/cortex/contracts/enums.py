@@ -83,3 +83,48 @@ class DeletionRequestStatus(StrEnum):
     FAILED_RETRYABLE = "failed_retryable"
     FAILED_TERMINAL = "failed_terminal"
     MANUAL_REPAIR = "manual_repair"
+
+
+class OAuthInstallationStatus(StrEnum):
+    INSTALLING = "installing"
+    ACTIVE = "active"
+    NEEDS_REAUTH = "needs_reauth"
+    DISABLED = "disabled"
+    REVOKED = "revoked"
+
+
+class SecretRefStatus(StrEnum):
+    ACTIVE = "active"
+    ROTATING = "rotating"
+    REVOKED = "revoked"
+
+
+class SourceConnectionStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    DISABLED = "disabled"
+
+
+class WebhookDeliveryStatus(StrEnum):
+    RECEIVED = "received"
+    VERIFIED = "verified"
+    PERSISTED = "persisted"
+    IGNORED_DUPLICATE = "ignored_duplicate"
+    FAILED = "failed"
+    DEADLETTERED = "deadlettered"
+
+
+class BackfillJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    RETRYING = "retrying"
+    FAILED = "failed"
+    DEADLETTERED = "deadlettered"
+
+
+class ProviderCursorStatus(StrEnum):
+    ACTIVE = "active"
+    STALE = "stale"
+    FAILED = "failed"
+    RESET_REQUESTED = "reset_requested"

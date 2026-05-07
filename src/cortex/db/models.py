@@ -606,3 +606,226 @@ class ApprovalRecordRecord(Base):
     evidence_pack_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     trace_id: Mapped[str | None] = mapped_column(String(128))
+
+
+class SecretRefRecord(Base):
+    __tablename__ = "secret_refs"
+    __table_args__ = (
+        Index("ix_secret_refs_workspace_provider", "workspace_id", "provider"),
+        Index("ix_secret_refs_workspace_status", "workspace_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_secret_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    key_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class OAuthInstallationRecord(Base):
+    __tablename__ = "oauth_installations"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "provider_workspace_id",
+            name="uq_oauth_installations_provider_workspace",
+        ),
+        Index("ix_oauth_installations_workspace_status", "workspace_id", "status"),
+        Index(
+            "ix_oauth_installations_workspace_provider",
+            "workspace_id",
+            "provider",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    enterprise_id: Mapped[str | None] = mapped_column(String(128))
+    bot_user_id: Mapped[str | None] = mapped_column(String(128))
+    installing_actor_id: Mapped[str | None] = mapped_column(String(128))
+    secret_ref_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scopes_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    provider_metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    health_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    installed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class SourceConnectionRecord(Base):
+    __tablename__ = "source_connections"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "external_source_id",
+            name="uq_source_connections_provider_source",
+        ),
+        Index(
+            "ix_source_connections_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+        Index(
+            "ix_source_connections_workspace_install",
+            "workspace_id",
+            "oauth_installation_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    oauth_installation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_source_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    display_name_hash: Mapped[str | None] = mapped_column(String(128))
+    selected: Mapped[bool] = mapped_column(nullable=False, default=True)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class WebhookDeliveryRecord(Base):
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "delivery_id",
+            name="uq_webhook_deliveries_provider_delivery",
+        ),
+        Index("ix_webhook_deliveries_workspace_status", "workspace_id", "status"),
+        Index("ix_webhook_deliveries_workspace_event", "workspace_id", "event_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    delivery_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    event_id: Mapped[str | None] = mapped_column(String(256))
+    signature_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_connection_id: Mapped[str | None] = mapped_column(String(128))
+    raw_event_id: Mapped[str | None] = mapped_column(String(128))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(128))
+    trace_id: Mapped[str | None] = mapped_column(String(128))
+
+
+class BackfillJobRecord(Base):
+    __tablename__ = "backfill_jobs"
+    __table_args__ = (
+        Index("ix_backfill_jobs_workspace_status", "workspace_id", "status"),
+        Index(
+            "ix_backfill_jobs_workspace_source",
+            "workspace_id",
+            "source_connection_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_connection_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    cursor_id: Mapped[str | None] = mapped_column(String(128))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error_code: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class ProviderCursorRecord(Base):
+    __tablename__ = "provider_cursors"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "source_connection_id",
+            "cursor_type",
+            name="uq_provider_cursors_identity",
+        ),
+        Index("ix_provider_cursors_workspace_status", "workspace_id", "status"),
+        Index(
+            "ix_provider_cursors_workspace_source",
+            "workspace_id",
+            "source_connection_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_connection_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    cursor_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    cursor_value: Mapped[str | None] = mapped_column(String(256))
+    high_watermark: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_advanced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
