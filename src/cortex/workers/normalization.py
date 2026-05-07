@@ -7,6 +7,7 @@ from cortex.ingestion.raw_events import (
     InMemoryRawEventRepository,
     RawEventNotFoundError,
 )
+from cortex.normalization.service import SourceNormalizationService
 
 
 class NormalizationWorkerSkeleton:
@@ -15,14 +16,28 @@ class NormalizationWorkerSkeleton:
         repository: InMemoryRawEventRepository,
         payload_store: InMemoryPayloadStore,
         max_attempts: int = 3,
+        normalization_service: SourceNormalizationService | None = None,
     ) -> None:
         self.repository = repository
         self.payload_store = payload_store
         self.max_attempts = max_attempts
+        self.normalization_service = normalization_service
 
     async def handle_raw_event_persisted(
         self, envelope: PipelineEventEnvelope
     ) -> dict[str, str]:
+        if self.normalization_service is not None:
+            result = await self.normalization_service.handle_raw_event_persisted(
+                envelope
+            )
+            response = {
+                "status": result.status,
+            }
+            if result.raw_event_id is not None:
+                response["raw_event_id"] = result.raw_event_id
+            if result.reason is not None:
+                response["reason"] = result.reason
+            return response
         if envelope.event_type != "raw_event.persisted":
             return {"status": "ignored", "reason": "unsupported_event_type"}
         if envelope.subject.type != "raw_event":
