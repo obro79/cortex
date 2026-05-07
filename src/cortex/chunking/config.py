@@ -40,6 +40,8 @@ class RetrievalConfig(BaseModel):
     embeddings: EmbeddingsConfig
     candidate_retrieval: dict[str, int | str]
     ranking: dict[str, float | str]
+    token_budget: dict[str, int | str] | None = None
+    context_gate: dict[str, bool | float | int | str] | None = None
 
 
 def load_retrieval_config(path: Path | None = None) -> RetrievalConfig:
