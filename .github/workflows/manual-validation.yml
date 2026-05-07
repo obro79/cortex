@@ -1,0 +1,100 @@
+name: Manual Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_dev_smoke:
+        description: Run dev workbench HTTP smoke checks
+        required: true
+        type: boolean
+        default: true
+      include_compose_config:
+        description: Run docker compose config
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Manual validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev --frozen
+
+      - name: Ruff lint
+        run: uv run --extra dev ruff check .
+
+      - name: Ruff format check
+        run: uv run --extra dev ruff format --check .
+
+      - name: Mypy
+        run: uv run --extra dev mypy src
+
+      - name: Pytest
+        run: uv run --extra dev pytest
+
+      - name: Docker Compose config
+        if: inputs.include_compose_config
+        run: docker compose config
+
+      - name: Dev workbench smoke
+        if: inputs.include_dev_smoke
+        env:
+          CORTEX_DEV_WORKBENCH_ENABLED: "true"
+        run: |
+          uv run --extra dev uvicorn cortex.api.app:create_app \
+            --factory \
+            --host 127.0.0.1 \
+            --port 8000 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"' EXIT
+
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/health/live >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:8000/health/live
+          curl -fsS http://127.0.0.1:8000/dev/workbench >/tmp/workbench.html
+          curl -fsS -X POST http://127.0.0.1:8000/dev/fixtures/seed \
+            >/tmp/seed.json
+          curl -fsS -X POST http://127.0.0.1:8000/dev/pipeline/run \
+            >/tmp/pipeline.json
+          curl -fsS -X POST http://127.0.0.1:8000/dev/retrieval/query \
+            -H 'content-type: application/json' \
+            -d '{"query":"COR-123 session migration constraints"}' \
+            >/tmp/query.json
+          curl -fsS -X POST http://127.0.0.1:8000/dev/evals/run \
+            >/tmp/evals.json
+
+          python - <<'PY'
+          import json
+
+          with open("/tmp/query.json", encoding="utf-8") as query_file:
+              query = json.load(query_file)
+          with open("/tmp/evals.json", encoding="utf-8") as evals_file:
+              evals = json.load(evals_file)
+
+          assert query["gate_status"] == "block", query
+          assert evals["status"] == "passed", evals
+          PY
