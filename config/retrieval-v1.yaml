@@ -63,3 +63,12 @@ token_budget:
   max_snippet_tokens: 180
   max_missing_context_items: 5
   max_conflict_items: 5
+
+context_gate:
+  version: gate-v1
+  high_confidence_conflict_threshold: 0.80
+  stale_context_days: 90
+  min_required_sources_for_high_risk_tasks: 2
+  block_on_permission_uncertainty: true
+  block_on_high_confidence_architecture_conflict: true
+  warn_on_missing_low_risk_context: true
