@@ -31,10 +31,10 @@ Use phase-local ADRs for implementation choices scoped to one phase.
 - [Phase 6: Context Gate](phase-06-context-gate/)
 - [Phase 7: Human-Approved Canonical Memory](phase-07-canonical-memory/)
 - [Phase 8: Real Slack Connector](phase-08-real-slack-connector/)
+- [Phase 8.5: Slack Connector Review And Manual Testing](phase-08-5-slack-review-manual-testing/)
 - [Phase 9: Linear + GitHub + Repo Docs](phase-09-linear-github-repo-docs/)
 - [Phase 10: Permissions And Security](phase-10-permissions-security/)
 - [Phase 11: Observability And Operations](phase-11-observability-operations/)
 - [Phase 12: Runtime Deployment](phase-12-runtime-deployment/)
 - [Phase 13: Layer-Later Platform Components](phase-13-layer-later-platform/)
 - [Phase 14: Minimal Web UI](phase-14-minimal-web-ui/)
-

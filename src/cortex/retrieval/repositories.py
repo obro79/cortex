@@ -58,6 +58,9 @@ class InMemoryRetrievalRequestRepository:
         self._records[request_id] = updated
         return updated
 
+    def get_by_id(self, request_id: str) -> RetrievalRequest:
+        return self._records[request_id]
+
 
 class InMemoryEvidencePackRepository:
     def __init__(self) -> None:

@@ -465,3 +465,144 @@ class EvidencePackRecord(Base):
     )
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ContextGateResultRecord(Base):
+    __tablename__ = "context_gate_results"
+    __table_args__ = (
+        Index(
+            "ix_context_gate_results_workspace_status_evaluated",
+            "workspace_id",
+            "status",
+            "evaluated_at",
+        ),
+        Index(
+            "ix_context_gate_results_workspace_risk_evaluated",
+            "workspace_id",
+            "risk_category",
+            "evaluated_at",
+        ),
+        Index(
+            "ix_context_gate_results_workspace_request",
+            "workspace_id",
+            "retrieval_request_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    retrieval_request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    evidence_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    risk_category: Mapped[str | None] = mapped_column(String(128))
+    reasons_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    required_actions_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    gate_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_action: Mapped[str | None] = mapped_column(String(128))
+    trace_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalDecisionRecord(Base):
+    __tablename__ = "canonical_decisions"
+    __table_args__ = (
+        Index(
+            "ix_canonical_decisions_workspace_scope_status",
+            "workspace_id",
+            "scope_type",
+            "scope_ref",
+            "status",
+        ),
+        Index(
+            "ix_canonical_decisions_workspace_status_approved",
+            "workspace_id",
+            "status",
+            "approved_at",
+        ),
+        Index(
+            "ix_canonical_decisions_workspace_supersedes",
+            "workspace_id",
+            "supersedes_decision_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope_ref: Mapped[str] = mapped_column(String(512), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    decision_text: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_pack_id: Mapped[str | None] = mapped_column(String(128))
+    supersedes_decision_id: Mapped[str | None] = mapped_column(String(128))
+    superseded_by_decision_id: Mapped[str | None] = mapped_column(String(128))
+    created_by_actor_id: Mapped[str | None] = mapped_column(String(128))
+    approved_by_actor_id: Mapped[str | None] = mapped_column(String(128))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_citations_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    stale_or_superseded_evidence_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    decision_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class ApprovalRecordRecord(Base):
+    __tablename__ = "approval_records"
+    __table_args__ = (
+        Index(
+            "ix_approval_records_workspace_target",
+            "workspace_id",
+            "target_type",
+            "target_id",
+        ),
+        Index(
+            "ix_approval_records_workspace_actor_created",
+            "workspace_id",
+            "actor_id",
+            "created_at",
+        ),
+        Index(
+            "ix_approval_records_workspace_action_created",
+            "workspace_id",
+            "action",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_text: Mapped[str | None] = mapped_column(String)
+    final_text: Mapped[str | None] = mapped_column(String)
+    rationale: Mapped[str | None] = mapped_column(String)
+    evidence_pack_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trace_id: Mapped[str | None] = mapped_column(String(128))

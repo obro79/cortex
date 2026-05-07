@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SourceChunkingConfig(BaseModel):
@@ -34,6 +34,24 @@ class EmbeddingsConfig(BaseModel):
     batch_size: int = Field(gt=0)
 
 
+class ContextGateConfig(BaseModel):
+    version: str
+    high_confidence_conflict_threshold: float = Field(ge=0, le=1)
+    stale_context_days: int = Field(ge=0)
+    min_required_sources_for_high_risk_tasks: int = Field(ge=1)
+    block_on_permission_uncertainty: bool
+    block_on_high_confidence_architecture_conflict: bool
+    warn_on_missing_low_risk_context: bool
+
+    @field_validator("version")
+    @classmethod
+    def version_must_be_gate_v1(cls, value: str) -> str:
+        if value != "gate-v1":
+            msg = "context_gate.version must be gate-v1"
+            raise ValueError(msg)
+        return value
+
+
 class RetrievalConfig(BaseModel):
     version: str
     chunking: ChunkingConfig
@@ -41,7 +59,7 @@ class RetrievalConfig(BaseModel):
     candidate_retrieval: dict[str, int | str]
     ranking: dict[str, float | str]
     token_budget: dict[str, int | str] | None = None
-    context_gate: dict[str, bool | float | int | str] | None = None
+    context_gate: ContextGateConfig
 
 
 def load_retrieval_config(path: Path | None = None) -> RetrievalConfig:
@@ -71,7 +89,11 @@ def _parse_simple_yaml(content: str) -> dict[str, Any]:
     return root
 
 
-def _parse_scalar(value: str) -> int | float | str:
+def _parse_scalar(value: str) -> bool | int | float | str:
+    if value == "true":
+        return True
+    if value == "false":
+        return False
     try:
         return int(value)
     except ValueError:

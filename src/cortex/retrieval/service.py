@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cortex.canonical_memory.repositories import InMemoryCanonicalDecisionRepository
+from cortex.canonical_memory.retrieval_priority import CanonicalDecisionCandidateAdapter
 from cortex.chunking.config import RetrievalConfig
 from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
@@ -42,6 +44,7 @@ class RetrievalService:
         request_repository: InMemoryRetrievalRequestRepository,
         evidence_repository: InMemoryEvidencePackRepository,
         publisher: EvidencePackPublisher,
+        canonical_decisions: InMemoryCanonicalDecisionRepository | None = None,
     ) -> None:
         self.config = config
         self.source_chunks = source_chunks
@@ -57,6 +60,8 @@ class RetrievalService:
         self.requests = request_repository
         self.evidence = evidence_repository
         self.publisher = publisher
+        self.canonical_decisions = canonical_decisions
+        self.canonical_adapter = CanonicalDecisionCandidateAdapter()
         self.permissions = PermissionFilter()
         self.builder = EvidencePackBuilder()
         self.ranker = CandidateRanker(config.ranking)
@@ -108,6 +113,13 @@ class RetrievalService:
             )
         except Exception as error:
             errors["vector"] = type(error).__name__
+        if self.canonical_decisions is not None:
+            candidates.extend(
+                self.canonical_adapter.candidates_for_query(
+                    decisions=self.canonical_decisions.list_active(workspace_id),
+                    query=query,
+                )
+            )
 
         allowed, exclusions = self.permissions.filter(candidates, plan)
         ranked = self.ranker.rank(
