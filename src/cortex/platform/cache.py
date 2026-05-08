@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 class CacheUnavailableError(RuntimeError):
@@ -27,6 +27,26 @@ class EphemeralCacheService(Protocol):
     def acquire_lock(self, key: str, *, ttl_seconds: int) -> bool: ...
 
     def release_lock(self, key: str) -> None: ...
+
+
+@runtime_checkable
+class RedisCacheClient(Protocol):
+    def get(self, name: str) -> str | bytes | None: ...
+
+    def set(
+        self,
+        name: str,
+        value: str,
+        *,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> bool | None: ...
+
+    def incrby(self, name: str, amount: int = 1) -> int: ...
+
+    def expire(self, name: str, time: int) -> bool: ...
+
+    def delete(self, name: str) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -105,6 +125,66 @@ class InMemoryEphemeralCache:
         if entry.is_expired(datetime.now(UTC)):
             self._records.pop(key, None)
             self._locks.discard(key)
+
+
+class RedisEphemeralCache:
+    """Redis-backed cache for transient state only."""
+
+    def __init__(self, client: RedisCacheClient) -> None:
+        self._client = client
+
+    def get(self, key: str) -> str | None:
+        try:
+            value = self._client.get(key)
+        except Exception as exc:
+            raise CacheUnavailableError("Redis cache get failed") from exc
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return value
+
+    def set(self, key: str, value: str, *, ttl_seconds: int | None = None) -> None:
+        try:
+            if ttl_seconds is not None and ttl_seconds <= 0:
+                self._client.delete(key)
+                return
+            self._client.set(key, value, ex=ttl_seconds)
+        except Exception as exc:
+            raise CacheUnavailableError("Redis cache set failed") from exc
+
+    def increment(
+        self, key: str, *, amount: int = 1, ttl_seconds: int | None = None
+    ) -> int:
+        try:
+            value = self._client.incrby(key, amount)
+            if ttl_seconds is not None and ttl_seconds <= 0:
+                self._client.delete(key)
+            elif ttl_seconds is not None:
+                self._client.expire(key, ttl_seconds)
+        except ValueError as exc:
+            raise CacheCounterError("cache value is not an integer counter") from exc
+        except Exception as exc:
+            raise CacheUnavailableError("Redis cache increment failed") from exc
+        return value
+
+    def delete(self, key: str) -> None:
+        try:
+            self._client.delete(key)
+        except Exception as exc:
+            raise CacheUnavailableError("Redis cache delete failed") from exc
+
+    def acquire_lock(self, key: str, *, ttl_seconds: int) -> bool:
+        try:
+            acquired = self._client.set(key, "locked", ex=max(ttl_seconds, 1), nx=True)
+            if acquired and ttl_seconds <= 0:
+                self._client.delete(key)
+        except Exception as exc:
+            raise CacheUnavailableError("Redis cache lock failed") from exc
+        return bool(acquired)
+
+    def release_lock(self, key: str) -> None:
+        self.delete(key)
 
 
 def _expires_at(ttl_seconds: int | None) -> datetime | None:
