@@ -9,6 +9,13 @@ from cortex.platform.cache import (
     RedisEphemeralCache,
 )
 from cortex.platform.factory import build_ephemeral_cache
+from cortex.platform.rate_limits import (
+    RateLimitDecision,
+    RateLimitExceededError,
+    RateLimitPolicy,
+    RateLimitService,
+    RateLimitSubject,
+)
 
 __all__ = [
     "CacheCounterError",
@@ -17,5 +24,10 @@ __all__ = [
     "InMemoryEphemeralCache",
     "RedisCacheClient",
     "RedisEphemeralCache",
+    "RateLimitDecision",
+    "RateLimitExceededError",
+    "RateLimitPolicy",
+    "RateLimitService",
+    "RateLimitSubject",
     "build_ephemeral_cache",
 ]

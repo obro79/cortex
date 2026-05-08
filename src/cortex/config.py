@@ -55,6 +55,24 @@ class Settings(BaseSettings):
     cortex_api_rate_limit_window_seconds: int = Field(
         default=60, alias="CORTEX_API_RATE_LIMIT_WINDOW_SECONDS"
     )
+    cortex_provider_rate_limit_enabled: bool = Field(
+        default=False, alias="CORTEX_PROVIDER_RATE_LIMIT_ENABLED"
+    )
+    cortex_provider_rate_limit_requests: int = Field(
+        default=60, alias="CORTEX_PROVIDER_RATE_LIMIT_REQUESTS"
+    )
+    cortex_provider_rate_limit_window_seconds: int = Field(
+        default=60, alias="CORTEX_PROVIDER_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    cortex_model_rate_limit_enabled: bool = Field(
+        default=False, alias="CORTEX_MODEL_RATE_LIMIT_ENABLED"
+    )
+    cortex_model_rate_limit_requests: int = Field(
+        default=120, alias="CORTEX_MODEL_RATE_LIMIT_REQUESTS"
+    )
+    cortex_model_rate_limit_window_seconds: int = Field(
+        default=60, alias="CORTEX_MODEL_RATE_LIMIT_WINDOW_SECONDS"
+    )
     slack_client_id: str = Field(default="", alias="SLACK_CLIENT_ID")
     slack_client_secret: str = Field(default="", alias="SLACK_CLIENT_SECRET")
     slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")

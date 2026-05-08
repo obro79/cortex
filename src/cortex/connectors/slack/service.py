@@ -25,6 +25,7 @@ from cortex.normalization.repositories import (
     InMemorySourceObjectRepository,
 )
 from cortex.normalization.service import SourceNormalizationService
+from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
 from cortex.workers.pipeline import InMemoryPipelineDispatcher
 
@@ -84,6 +85,8 @@ def create_slack_connector_services(
     payload_store: PayloadStore | None = None,
     ingestion_service: SlackIngestionService | None = None,
     auto_drain_pipeline: bool = True,
+    provider_rate_limiter: RateLimitService | None = None,
+    provider_rate_limit_policy: RateLimitPolicy | None = None,
 ) -> SlackConnectorServices:
     secrets = InMemorySecretRefRepository()
     installations = InMemoryOAuthInstallationRepository()
@@ -172,6 +175,8 @@ def create_slack_connector_services(
             cursors=cursors,
             backfills=backfills,
             ingestion=ingestion,
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
         ),
         health=SlackHealthService(
             installations=installations,

@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any, cast
 
 from cortex.contracts.entities import EmbeddingRecord
+from cortex.platform.rate_limits import (
+    RateLimitPolicy,
+    RateLimitService,
+    RateLimitSubject,
+)
 from cortex.utils.asyncio import maybe_await
 
 from .deterministic import DeterministicEmbeddingProvider
@@ -19,12 +24,16 @@ class EmbeddingService:
         provider: DeterministicEmbeddingProvider,
         publisher: EmbeddingPublisher,
         model: str = "fixture-vector-v1",
+        model_rate_limiter: RateLimitService | None = None,
+        model_rate_limit_policy: RateLimitPolicy | None = None,
     ) -> None:
         self.source_chunks = source_chunks
         self.embeddings = embeddings
         self.provider = provider
         self.publisher = publisher
         self.model = model
+        self.model_rate_limiter = model_rate_limiter
+        self.model_rate_limit_policy = model_rate_limit_policy
 
     async def queue_for_chunk(self, source_chunk_id: str) -> EmbeddingUpsertResult:
         chunk = await maybe_await(self.source_chunks.get_by_id(source_chunk_id))
@@ -50,6 +59,15 @@ class EmbeddingService:
 
     async def complete(self, embedding_id: str) -> EmbeddingRecord:
         record = await maybe_await(self.embeddings.get_by_id(embedding_id))
+        if self.model_rate_limiter and self.model_rate_limit_policy:
+            self.model_rate_limiter.enforce(
+                self.model_rate_limit_policy,
+                RateLimitSubject(
+                    workspace_id=record.workspace_id,
+                    user_id=f"model:{self.model}",
+                    client_id="embedding-worker",
+                ),
+            )
         output = self.provider.embed(record.input_text_hash)
         completed = cast(
             EmbeddingRecord,

@@ -5,8 +5,30 @@ import hmac
 import json
 
 from cortex.connectors.github.service import GitHubConnectorServices
+from cortex.connectors.linear.client import LinearIssuesPage
 from cortex.connectors.linear.service import LinearConnectorServices
 from cortex.connectors.repo_docs.service import RepoDocsConnectorServices
+from cortex.platform import (
+    InMemoryEphemeralCache,
+    RateLimitPolicy,
+    RateLimitService,
+)
+
+
+class RecordingLinearClient:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def list_issues(
+        self,
+        *,
+        api_token: str,
+        team_or_project_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 25,
+    ) -> LinearIssuesPage:
+        self.call_count += 1
+        return LinearIssuesPage(issues=[])
 
 
 async def test_linear_backfill_respects_selected_team_or_project() -> None:
@@ -36,6 +58,34 @@ async def test_linear_backfill_respects_selected_team_or_project() -> None:
 
     assert result["raw_events_created"] == 1
     assert services.health("ws_1")["auth_status"] == "active"
+
+
+async def test_linear_live_backfill_enforces_provider_rate_limit() -> None:
+    client = RecordingLinearClient()
+    services = LinearConnectorServices(
+        api_token_configured=True,
+        api_token="token",
+        client=client,
+        provider_rate_limiter=RateLimitService(InMemoryEphemeralCache()),
+        provider_rate_limit_policy=RateLimitPolicy(
+            name="provider", limit=1, window_seconds=60, namespace="provider"
+        ),
+    )
+
+    first = await services.live_backfill(
+        workspace_id="ws_1", source_connection_id="src_linear"
+    )
+    second = await services.live_backfill(
+        workspace_id="ws_1", source_connection_id="src_linear"
+    )
+
+    assert first["ok"] is True
+    assert second == {
+        "ok": False,
+        "error": "rate_limited",
+        "retry_after_seconds": 60,
+    }
+    assert client.call_count == 1
 
 
 async def test_github_backfill_respects_selected_repo() -> None:

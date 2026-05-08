@@ -41,6 +41,20 @@ class RateLimitDecision:
     count: int
 
 
+class RateLimitExceededError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        policy: RateLimitPolicy,
+        subject: RateLimitSubject,
+        decision: RateLimitDecision,
+    ) -> None:
+        super().__init__(f"rate limit exceeded for {policy.namespace}:{policy.name}")
+        self.policy = policy
+        self.subject = subject
+        self.decision = decision
+
+
 class RateLimitService:
     def __init__(self, cache: EphemeralCacheService) -> None:
         self._cache = cache
@@ -58,3 +72,13 @@ class RateLimitService:
             retry_after_seconds=0 if allowed else policy.window_seconds,
             count=count,
         )
+
+    def enforce(
+        self, policy: RateLimitPolicy, subject: RateLimitSubject
+    ) -> RateLimitDecision:
+        decision = self.check(policy, subject)
+        if not decision.allowed:
+            raise RateLimitExceededError(
+                policy=policy, subject=subject, decision=decision
+            )
+        return decision

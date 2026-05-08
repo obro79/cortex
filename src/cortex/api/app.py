@@ -24,7 +24,7 @@ from cortex.ingestion.payloads import FilePayloadStore, PayloadStore
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
-from cortex.platform.rate_limits import RateLimitPolicy
+from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 
 
 def create_app(
@@ -38,8 +38,15 @@ def create_app(
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    cache = ephemeral_cache
+    if cache is None and (
+        resolved.cortex_api_rate_limit_enabled
+        or resolved.cortex_provider_rate_limit_enabled
+    ):
+        cache = build_ephemeral_cache(resolved)
     if resolved.cortex_api_rate_limit_enabled:
-        cache = ephemeral_cache or build_ephemeral_cache(resolved)
+        if cache is None:
+            raise RuntimeError("API rate limiting requires an ephemeral cache")
         app.state.ephemeral_cache = cache
         install_api_rate_limit(
             app,
@@ -51,6 +58,21 @@ def create_app(
                 namespace="http",
             ),
         )
+    provider_rate_limiter = (
+        RateLimitService(cache)
+        if (cache is not None and resolved.cortex_provider_rate_limit_enabled)
+        else None
+    )
+    provider_rate_limit_policy = (
+        RateLimitPolicy(
+            name="provider",
+            limit=resolved.cortex_provider_rate_limit_requests,
+            window_seconds=resolved.cortex_provider_rate_limit_window_seconds,
+            namespace="provider",
+        )
+        if resolved.cortex_provider_rate_limit_enabled
+        else None
+    )
     app.include_router(health_router)
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
@@ -84,6 +106,8 @@ def create_app(
             payload_store=payload_store,
             ingestion_service=ingestion_service,
             auto_drain_pipeline=auto_drain_pipeline,
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
         )
         app.include_router(slack_router)
     if resolved.cortex_linear_connector_enabled:
@@ -98,6 +122,8 @@ def create_app(
             api_token_configured=bool(resolved.linear_api_token),
             api_token=resolved.linear_api_token,
             client=RealLinearClient(),
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
             **linear_kwargs,
         )
         app.include_router(linear_router)
@@ -117,6 +143,8 @@ def create_app(
             installation_token=resolved.github_installation_token,
             client=RealGitHubClient(),
             webhook_secret=resolved.github_webhook_secret,
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
             **github_kwargs,
         )
         app.include_router(github_router)

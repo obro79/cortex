@@ -6,6 +6,12 @@ from typing import Protocol
 from cortex.contracts.entities import BackfillJob
 from cortex.ingestion.raw_events import RawEventIdempotencyConflict, RawEventInput
 from cortex.ingestion.service import IngestionResult
+from cortex.platform.rate_limits import (
+    RateLimitExceededError,
+    RateLimitPolicy,
+    RateLimitService,
+    RateLimitSubject,
+)
 
 from .client import SlackPermanentError, SlackRateLimitError, SlackWebClient
 from .mapping import derived_raw_events_for_message
@@ -42,6 +48,8 @@ class SlackBackfillService:
         cursors: InMemoryProviderCursorRepository,
         backfills: InMemoryBackfillJobRepository,
         ingestion: SlackBackfillIngestionService,
+        provider_rate_limiter: RateLimitService | None = None,
+        provider_rate_limit_policy: RateLimitPolicy | None = None,
     ) -> None:
         self.client = client
         self.source_connections = source_connections
@@ -50,6 +58,8 @@ class SlackBackfillService:
         self.cursors = cursors
         self.backfills = backfills
         self.ingestion = ingestion
+        self.provider_rate_limiter = provider_rate_limiter
+        self.provider_rate_limit_policy = provider_rate_limit_policy
 
     async def backfill_source(
         self, *, workspace_id: str, source_connection_id: str
@@ -70,6 +80,9 @@ class SlackBackfillService:
         access_token = self.secrets.get_token(installation.secret_ref_id)
         try:
             while True:
+                self._enforce_provider_limit(
+                    workspace_id=workspace_id, operation="conversation_history"
+                )
                 page = await self.client.conversation_history(
                     access_token=access_token,
                     channel_id=source.external_source_id,
@@ -93,6 +106,9 @@ class SlackBackfillService:
                         event_ts=latest_ts,
                     )
                     if message.get("reply_count"):
+                        self._enforce_provider_limit(
+                            workspace_id=workspace_id, operation="thread_replies"
+                        )
                         replies = await self.client.thread_replies(
                             access_token=access_token,
                             channel_id=source.external_source_id,
@@ -122,6 +138,11 @@ class SlackBackfillService:
             return SlackBackfillResult(
                 False, job, raw_events_created, duplicates, latest_ts
             )
+        except RateLimitExceededError:
+            job = self.backfills.mark_retrying(job.id, error_code="rate_limited")
+            return SlackBackfillResult(
+                False, job, raw_events_created, duplicates, latest_ts
+            )
         except (SlackPermanentError, RawEventIdempotencyConflict):
             job = self.backfills.mark_deadlettered(
                 job.id, error_code="permanent_failure"
@@ -135,6 +156,18 @@ class SlackBackfillService:
             cursor_id=cursor.id if cursor else None,
         )
         return SlackBackfillResult(True, job, raw_events_created, duplicates, latest_ts)
+
+    def _enforce_provider_limit(self, *, workspace_id: str, operation: str) -> None:
+        if not self.provider_rate_limiter or not self.provider_rate_limit_policy:
+            return
+        self.provider_rate_limiter.enforce(
+            self.provider_rate_limit_policy,
+            RateLimitSubject(
+                workspace_id=workspace_id,
+                user_id="provider:slack",
+                client_id=f"slack:{operation}",
+            ),
+        )
 
     async def _persist_message_family(
         self,

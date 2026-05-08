@@ -9,6 +9,12 @@ from cortex.ingestion.payloads import InMemoryPayloadStore, PayloadStore
 from cortex.ingestion.publisher import RawEventPublisher
 from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
 from cortex.ingestion.service import IngestionResult, RawEventIngestionService
+from cortex.platform.rate_limits import (
+    RateLimitExceededError,
+    RateLimitPolicy,
+    RateLimitService,
+    RateLimitSubject,
+)
 
 from .client import EmptyLinearClient, LinearClient
 
@@ -29,6 +35,8 @@ class LinearConnectorServices:
     payload_store: PayloadStore = field(default_factory=InMemoryPayloadStore)
     event_bus: EventBus = field(default_factory=InMemoryEventBus)
     ingestion: LinearIngestionService | None = None
+    provider_rate_limiter: RateLimitService | None = None
+    provider_rate_limit_policy: RateLimitPolicy | None = None
 
     def __post_init__(self) -> None:
         if self.ingestion is None:
@@ -104,6 +112,22 @@ class LinearConnectorServices:
     ) -> dict[str, object]:
         if not self.api_token:
             return {"ok": False, "error": "linear_api_token_required"}
+        if self.provider_rate_limiter and self.provider_rate_limit_policy:
+            try:
+                self.provider_rate_limiter.enforce(
+                    self.provider_rate_limit_policy,
+                    RateLimitSubject(
+                        workspace_id=workspace_id,
+                        user_id="provider:linear",
+                        client_id="linear-live-backfill",
+                    ),
+                )
+            except RateLimitExceededError as exc:
+                return {
+                    "ok": False,
+                    "error": "rate_limited",
+                    "retry_after_seconds": exc.decision.retry_after_seconds,
+                }
         issues: list[dict[str, Any]] = []
         source_ids: list[str | None] = list(sorted(self.source_ids))
         if not source_ids:

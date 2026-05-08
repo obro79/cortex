@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from cortex.config import Settings
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.ingestion.payloads import FilePayloadStore
@@ -79,6 +80,7 @@ async def test_sql_dispatcher_commits_before_publishing_buffered_events(
         session_factory=FakeSessionFactory(calls),  # type: ignore[arg-type]
         payload_store=FilePayloadStore(tmp_path),
         event_bus=FakeKafkaBus(calls),  # type: ignore[arg-type]
+        settings=Settings(),
     )
 
     async def fake_dispatch(session, incoming, event_bus) -> object:
@@ -108,6 +110,7 @@ async def test_sql_dispatcher_retryable_result_commits_state_but_not_publish_or_
         session_factory=FakeSessionFactory(calls),  # type: ignore[arg-type]
         payload_store=FilePayloadStore(tmp_path),
         event_bus=FakeKafkaBus(calls),  # type: ignore[arg-type]
+        settings=Settings(),
     )
 
     async def fake_dispatch(session, incoming, event_bus) -> object:
@@ -134,6 +137,7 @@ async def test_sql_dispatcher_downstream_publish_failure_is_retryable(
         session_factory=FakeSessionFactory(calls),  # type: ignore[arg-type]
         payload_store=FilePayloadStore(tmp_path),
         event_bus=FakeKafkaBus(calls, fail=True),  # type: ignore[arg-type]
+        settings=Settings(),
     )
 
     async def fake_dispatch(session, incoming, event_bus) -> object:
