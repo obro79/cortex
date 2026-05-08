@@ -1,6 +1,8 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: api
     command: uvicorn cortex.api.app:create_app --factory --host 0.0.0.0 --port 8000
     env_file: .env.example
     environment:
@@ -20,7 +22,9 @@ services:
       - payload-data:/var/lib/cortex/payloads
 
   worker:
-    build: .
+    build:
+      context: .
+      target: worker
     command: cortex-worker --role pipeline
     env_file: .env.example
     environment:
