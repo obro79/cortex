@@ -1,0 +1,7 @@
+cortex_event_bus: kafka
+cortex_state_backend: sql
+cortex_slack_connector_enabled: true
+kafka_bootstrap_servers: localhost:9092
+kafka_consumer_group: cortex-pipeline-v1
+database_url: postgresql+asyncpg://cortex:cortex@localhost:5432/cortex
+payload_store_path: ./.local/payloads

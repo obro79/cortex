@@ -88,8 +88,8 @@ class KafkaEventBus:
             topic,
             event.model_dump_json().encode("utf-8"),
             key=event.partition_key.encode("utf-8"),
-            headers=(
+            headers=[
                 ("event_id", event.event_id.encode("utf-8")),
                 ("schema_version", event.schema_version.encode("utf-8")),
-            ),
+            ],
         )

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from cortex.contracts.entities import BackfillJob
-from cortex.ingestion.raw_events import RawEventIdempotencyConflict
-from cortex.ingestion.service import RawEventIngestionService
+from cortex.ingestion.raw_events import RawEventIdempotencyConflict, RawEventInput
+from cortex.ingestion.service import IngestionResult
 
 from .client import SlackPermanentError, SlackRateLimitError, SlackWebClient
 from .mapping import derived_raw_events_for_message
@@ -26,6 +27,10 @@ class SlackBackfillResult:
     cursor_value: str | None
 
 
+class SlackBackfillIngestionService(Protocol):
+    async def ingest(self, item: RawEventInput) -> IngestionResult: ...
+
+
 class SlackBackfillService:
     def __init__(
         self,
@@ -36,7 +41,7 @@ class SlackBackfillService:
         secrets: InMemorySecretRefRepository,
         cursors: InMemoryProviderCursorRepository,
         backfills: InMemoryBackfillJobRepository,
-        ingestion: RawEventIngestionService,
+        ingestion: SlackBackfillIngestionService,
     ) -> None:
         self.client = client
         self.source_connections = source_connections

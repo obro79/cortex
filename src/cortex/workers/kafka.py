@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ValidationError
 
@@ -14,7 +14,10 @@ from cortex.contracts.pipeline_events import (
 from cortex.events.bus import DEADLETTER_TOPIC
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.events.kafka_admin import ensure_pipeline_topics
-from cortex.workers.pipeline import InMemoryPipelineDispatcher
+
+
+class PipelineDispatcher(Protocol):
+    async def drain(self, event_bus: InMemoryEventBus) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,7 @@ class KafkaPipelineConsumer:
         *,
         bootstrap_servers: str,
         group_id: str,
-        dispatcher: InMemoryPipelineDispatcher,
+        dispatcher: PipelineDispatcher,
         consumer: Any | None = None,
         producer: Any | None = None,
         client_id: str = "cortex-pipeline-worker",
@@ -59,6 +62,7 @@ class KafkaPipelineConsumer:
                 bootstrap_servers=self.bootstrap_servers,
                 group_id=self.group_id,
                 enable_auto_commit=False,
+                auto_offset_reset="earliest",
                 client_id=self.client_id,
             )
             self.producer = AIOKafkaProducer(
@@ -73,6 +77,9 @@ class KafkaPipelineConsumer:
             await self.consumer.stop()
         if self.producer is not None:
             await self.producer.stop()
+        dispatcher_close = getattr(self.dispatcher, "aclose", None)
+        if dispatcher_close is not None:
+            await dispatcher_close()
 
     async def run_forever(self, topics: tuple[str, ...]) -> None:
         await ensure_pipeline_topics(bootstrap_servers=self.bootstrap_servers)
@@ -181,4 +188,4 @@ class KafkaPipelineConsumer:
         )
 
 
-PipelineFactory = Callable[[], Awaitable[InMemoryPipelineDispatcher]]
+PipelineFactory = Callable[[], Awaitable[PipelineDispatcher]]

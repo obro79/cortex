@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from cortex.chunking.config import load_retrieval_config
 from cortex.chunking.publishers import SourceChunkPublisher
@@ -15,8 +16,8 @@ from cortex.events.bus import EventBus
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.ingestion.payloads import InMemoryPayloadStore, PayloadStore
 from cortex.ingestion.publisher import RawEventPublisher
-from cortex.ingestion.raw_events import InMemoryRawEventRepository
-from cortex.ingestion.service import RawEventIngestionService
+from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
+from cortex.ingestion.service import IngestionResult, RawEventIngestionService
 from cortex.normalization.publishers import SourceFilePublisher, SourceObjectPublisher
 from cortex.normalization.repositories import (
     InMemoryRelationshipSeedRepository,
@@ -41,6 +42,10 @@ from .repositories import (
 )
 from .sources import SlackSourceSelectionService
 from .webhooks import SlackWebhookService, SlackWebhookVerifier
+
+
+class SlackIngestionService(Protocol):
+    async def ingest(self, item: RawEventInput) -> IngestionResult: ...
 
 
 @dataclass(frozen=True)
@@ -77,6 +82,7 @@ def create_slack_connector_services(
     slack_client: SlackWebClient | None = None,
     event_bus: EventBus | None = None,
     payload_store: PayloadStore | None = None,
+    ingestion_service: SlackIngestionService | None = None,
     auto_drain_pipeline: bool = True,
 ) -> SlackConnectorServices:
     secrets = InMemorySecretRefRepository()
@@ -93,7 +99,7 @@ def create_slack_connector_services(
     source_chunks = InMemorySourceChunkRepository()
     embedding_records = InMemoryEmbeddingRecordRepository()
     retrieval_config = load_retrieval_config()
-    ingestion = RawEventIngestionService(
+    ingestion = ingestion_service or RawEventIngestionService(
         repository=raw_events,
         payload_store=resolved_payload_store,
         publisher=RawEventPublisher(resolved_event_bus),

@@ -5,6 +5,8 @@ services:
     env_file: .env.example
     environment:
       CORTEX_EVENT_BUS: kafka
+      CORTEX_STATE_BACKEND: sql
+      DATABASE_URL: postgresql+asyncpg://cortex:cortex@postgres:5432/cortex
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       PAYLOAD_STORE_PATH: /var/lib/cortex/payloads
     ports:
@@ -23,6 +25,8 @@ services:
     env_file: .env.example
     environment:
       CORTEX_EVENT_BUS: kafka
+      CORTEX_STATE_BACKEND: sql
+      DATABASE_URL: postgresql+asyncpg://cortex:cortex@postgres:5432/cortex
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       PAYLOAD_STORE_PATH: /var/lib/cortex/payloads
     depends_on:

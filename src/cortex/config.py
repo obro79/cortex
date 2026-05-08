@@ -1,8 +1,14 @@
+import os
 from functools import lru_cache
 from typing import Any, Literal
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 from cortex.observability.logging import redact_mapping
 
@@ -25,6 +31,9 @@ class Settings(BaseSettings):
     cortex_event_bus: Literal["memory", "kafka"] = Field(
         default="memory", alias="CORTEX_EVENT_BUS"
     )
+    cortex_state_backend: Literal["memory", "sql"] = Field(
+        default="memory", alias="CORTEX_STATE_BACKEND"
+    )
     slack_client_id: str = Field(default="", alias="SLACK_CLIENT_ID")
     slack_client_secret: str = Field(default="", alias="SLACK_CLIENT_SECRET")
     slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")
@@ -42,6 +51,32 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = Field(
         default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        yaml_file = os.getenv("CORTEX_CONFIG_FILE")
+        if not yaml_file:
+            return (
+                init_settings,
+                env_settings,
+                dotenv_settings,
+                file_secret_settings,
+            )
+        yaml_settings = YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file)
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            yaml_settings,
+            file_secret_settings,
+        )
 
     def sanitized_dict(self) -> dict[str, Any]:
         return redact_mapping(self.model_dump(mode="json"))
