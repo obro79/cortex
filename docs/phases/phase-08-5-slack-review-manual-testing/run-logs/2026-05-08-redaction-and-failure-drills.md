@@ -43,21 +43,19 @@ manual testing and are not copied into committed run logs.
 | File/link metadata redaction | `tests/connectors/slack/test_file_ingestion.py` | file name/private URL excluded; hash retained | PASS |
 | Revoked token/scope drift | OAuth missing-scope path plus health status fix in this phase | missing scopes mark `needs_reauth`; health now reports non-active status | PASS |
 | Downstream normalization failure followed by replay | normalization worker tests and `RawEventReplayService` tests | raw events can be replayed; malformed normalization can deadletter | PARTIAL |
-| Live Slack raw event to source object/chunk/retrieval | manual review of registry and live run | no dedicated live Slack normalizer/chunker/index path yet | BLOCKED |
+| Live Slack raw event to source object/chunk/retrieval | automated live-shaped Slack tests plus Kafka smoke | selected-channel Slack payloads normalize, chunk, retrieve, and embed without payload text leaks | PASS |
 
 ## Findings
 
 ### P1: Live Slack Raw Events Do Not Reach Retrieval/Gate
 
-`src/cortex/normalization/registry.py` currently maps provider `"slack"` to the
-fixture normalizer. Live Slack payloads can be persisted and replayed, but they
-do not have a production Slack normalizer that emits Slack source objects/files,
-chunks, indexes, evidence packs, or context-gate evidence.
+Status: fixed for Phase 8.5 validation.
 
-Impact: Phase 8.5 cannot honestly approve Phase 9 because the acceptance
-criterion "real Slack data reaches retrieval/gate" is not met.
-
-Status: BLOCKING follow-up required.
+Live-shaped selected-channel Slack payloads now normalize into Slack source
+objects, chunk into retrievable evidence, and flow through deterministic
+embedding locally. The Apache Kafka smoke additionally proves the raw-event,
+normalization, chunking, and embedding path across durable Postgres state and a
+real Kafka broker.
 
 ### P2: Connector Health Previously Reported OAuth As Active Unconditionally
 

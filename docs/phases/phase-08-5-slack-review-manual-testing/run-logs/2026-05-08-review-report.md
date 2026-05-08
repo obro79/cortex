@@ -83,6 +83,9 @@ Confirmed live:
 - Added `InMemoryPipelineDispatcher` and wired Slack webhook/backfill routes to
   drain raw-event, source-object, chunk, and deterministic embedding events
   after successful intake.
+- Added a durable SQL state backend, Apache Kafka producer/consumer wiring, and
+  a Kafka worker factory so the same Slack-shaped data path can run across
+  Postgres and a real Kafka broker.
 - Added live-shaped Slack retrieval/context-gate tests proving selected-channel
   webhook payloads can become embedded evidence without copying Slack text into
   pipeline event payloads.
@@ -110,6 +113,26 @@ Validation added:
 .venv/bin/mypy src
 ```
 
+Kafka smoke validation added after the durable pipeline work:
+
+```bash
+docker compose up -d postgres kafka
+DATABASE_URL=postgresql+asyncpg://cortex:cortex@localhost:5432/cortex .venv/bin/alembic upgrade head
+DATABASE_URL=postgresql+asyncpg://cortex:cortex@localhost:5432/cortex KAFKA_BOOTSTRAP_SERVERS=localhost:29092 PAYLOAD_STORE_PATH=.local/kafka-smoke-payloads .venv/bin/python scripts/kafka_slack_e2e_smoke.py
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/mypy src
+.venv/bin/pytest
+docker compose config
+git diff --check
+```
+
+Smoke output:
+
+```json
+{"channel_id": "C_KAFKA_SMOKE", "counts": {"embeddings": 1, "raw_events": 1, "source_chunks": 1, "source_objects": 1}, "ok": true, "workspace_id": "ws_kafka_smoke_1778276410"}
+```
+
 ## Non-Blocking Findings
 
 - Phase 8 connector state is in memory for local testing. This is acceptable for
@@ -134,6 +157,10 @@ and private link URLs are absent from pipeline event payloads.
 Phase 9 may start from the Phase 8.5 data-path perspective. The connector is
 proven live through raw events, and live-shaped Slack payloads are now proven
 through automatic deterministic embedding, retrieval, and context gate locally.
+The Kafka smoke proves selected Slack-shaped raw events can also move through
+Apache Kafka, durable Postgres state, normalization, chunking, and deterministic
+embedding without requiring Gemini.
+
 Residual risk: the external Slack/ngrok manual walkthrough was not re-run after
-this code change, so hosted or manual live-dev verification should still be
-repeated before treating this as production-ready.
+the Kafka durable pipeline change, so hosted or manual live-dev verification
+should still be repeated before treating this as production-ready.
