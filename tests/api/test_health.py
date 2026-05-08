@@ -14,5 +14,32 @@ def test_live_returns_liveness() -> None:
 def test_ready_without_database_configured() -> None:
     client = TestClient(create_app(Settings()))
     response = client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "checks": {"runtime_config": "failed"},
+        "issues": [
+            {
+                "field": "database_url",
+                "code": "missing_required_config",
+                "message": "DATABASE_URL is required for this runtime role",
+            }
+        ],
+    }
+
+
+def test_ready_with_required_configured() -> None:
+    client = TestClient(
+        create_app(
+            Settings(
+                database_url="postgresql+asyncpg://cortex:cortex@postgres:5432/cortex"
+            )
+        )
+    )
+    response = client.get("/health/ready")
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "database_configured": False}
+    assert response.json() == {
+        "status": "ready",
+        "checks": {"runtime_config": "ok"},
+        "issues": [],
+    }
