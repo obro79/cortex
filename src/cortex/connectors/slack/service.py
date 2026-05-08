@@ -9,9 +9,9 @@ from cortex.ingestion.raw_events import InMemoryRawEventRepository
 from cortex.ingestion.service import RawEventIngestionService
 
 from .backfill import SlackBackfillService
-from .client import EmptySlackWebClient, SlackWebClient
+from .client import EmptySlackWebClient, RealSlackWebClient, SlackWebClient
 from .health import SlackHealthService
-from .oauth import SlackOAuthService
+from .oauth import RealSlackOAuthClient, SlackOAuthClient, SlackOAuthService
 from .repositories import (
     InMemoryBackfillJobRepository,
     InMemoryOAuthInstallationRepository,
@@ -44,6 +44,10 @@ class SlackConnectorServices:
 def create_slack_connector_services(
     *,
     signing_secret: str = "local-signing-secret",
+    client_id: str = "",
+    client_secret: str = "",
+    redirect_uri: str = "",
+    oauth_client: SlackOAuthClient | None = None,
     slack_client: SlackWebClient | None = None,
 ) -> SlackConnectorServices:
     secrets = InMemorySecretRefRepository()
@@ -59,11 +63,29 @@ def create_slack_connector_services(
         payload_store=InMemoryPayloadStore(),
         publisher=RawEventPublisher(event_bus),
     )
+    resolved_oauth_client = oauth_client
+    if resolved_oauth_client is None and client_id and client_secret and redirect_uri:
+        resolved_oauth_client = RealSlackOAuthClient(
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uri=redirect_uri,
+        )
+    resolved_slack_client = slack_client
+    if resolved_slack_client is None and client_id and client_secret and redirect_uri:
+        resolved_slack_client = RealSlackWebClient()
     return SlackConnectorServices(
-        oauth=SlackOAuthService(secrets=secrets, installations=installations),
+        oauth=SlackOAuthService(
+            secrets=secrets,
+            installations=installations,
+            client=resolved_oauth_client,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+        ),
         sources=SlackSourceSelectionService(
             installations=installations,
+            secrets=secrets,
             source_connections=source_connections,
+            client=resolved_slack_client or EmptySlackWebClient(),
         ),
         webhooks=SlackWebhookService(
             deliveries=deliveries,
@@ -72,8 +94,10 @@ def create_slack_connector_services(
             verifier=SlackWebhookVerifier(signing_secret),
         ),
         backfill=SlackBackfillService(
-            client=slack_client or EmptySlackWebClient(),
+            client=resolved_slack_client or EmptySlackWebClient(),
             source_connections=source_connections,
+            installations=installations,
+            secrets=secrets,
             cursors=cursors,
             backfills=backfills,
             ingestion=ingestion,

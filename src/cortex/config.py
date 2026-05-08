@@ -22,7 +22,11 @@ class Settings(BaseSettings):
     cortex_slack_connector_enabled: bool = Field(
         default=False, alias="CORTEX_SLACK_CONNECTOR_ENABLED"
     )
+    slack_client_id: str = Field(default="", alias="SLACK_CLIENT_ID")
+    slack_client_secret: str = Field(default="", alias="SLACK_CLIENT_SECRET")
     slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")
+    slack_redirect_uri: str = Field(default="", alias="SLACK_REDIRECT_URI")
+    slack_team_id: str = Field(default="", alias="SLACK_TEAM_ID")
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")

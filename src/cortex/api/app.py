@@ -23,7 +23,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.include_router(dev_router)
     if resolved.cortex_slack_connector_enabled:
         app.state.slack_connector = create_slack_connector_services(
-            signing_secret=resolved.slack_signing_secret or "local-signing-secret"
+            signing_secret=resolved.slack_signing_secret or "local-signing-secret",
+            client_id=resolved.slack_client_id,
+            client_secret=resolved.slack_client_secret,
+            redirect_uri=resolved.slack_redirect_uri,
         )
         app.include_router(slack_router)
     return app

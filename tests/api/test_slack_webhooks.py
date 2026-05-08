@@ -14,7 +14,10 @@ def client() -> TestClient:
         create_app(
             Settings(
                 cortex_slack_connector_enabled=True,
+                slack_client_id="",
+                slack_client_secret="",
                 slack_signing_secret="test-secret",
+                slack_redirect_uri="",
             )
         )
     )

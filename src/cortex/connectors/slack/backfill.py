@@ -10,7 +10,9 @@ from .client import SlackPermanentError, SlackRateLimitError, SlackWebClient
 from .mapping import derived_raw_events_for_message
 from .repositories import (
     InMemoryBackfillJobRepository,
+    InMemoryOAuthInstallationRepository,
     InMemoryProviderCursorRepository,
+    InMemorySecretRefRepository,
     InMemorySourceConnectionRepository,
 )
 
@@ -30,12 +32,16 @@ class SlackBackfillService:
         *,
         client: SlackWebClient,
         source_connections: InMemorySourceConnectionRepository,
+        installations: InMemoryOAuthInstallationRepository,
+        secrets: InMemorySecretRefRepository,
         cursors: InMemoryProviderCursorRepository,
         backfills: InMemoryBackfillJobRepository,
         ingestion: RawEventIngestionService,
     ) -> None:
         self.client = client
         self.source_connections = source_connections
+        self.installations = installations
+        self.secrets = secrets
         self.cursors = cursors
         self.backfills = backfills
         self.ingestion = ingestion
@@ -55,9 +61,12 @@ class SlackBackfillService:
         duplicates = 0
         latest_ts: str | None = cursor.cursor_value if cursor else None
         page_cursor: str | None = None
+        installation = self.installations.get_by_id(source.oauth_installation_id)
+        access_token = self.secrets.get_token(installation.secret_ref_id)
         try:
             while True:
                 page = await self.client.conversation_history(
+                    access_token=access_token,
                     channel_id=source.external_source_id,
                     cursor=page_cursor,
                     oldest=cursor.cursor_value if cursor else None,
@@ -80,6 +89,7 @@ class SlackBackfillService:
                     )
                     if message.get("reply_count"):
                         replies = await self.client.thread_replies(
+                            access_token=access_token,
                             channel_id=source.external_source_id,
                             thread_ts=str(message.get("ts")),
                         )

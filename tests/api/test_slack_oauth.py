@@ -9,7 +9,10 @@ def client() -> TestClient:
         create_app(
             Settings(
                 cortex_slack_connector_enabled=True,
+                slack_client_id="",
+                slack_client_secret="",
                 slack_signing_secret="test-secret",
+                slack_redirect_uri="",
             )
         )
     )
@@ -31,6 +34,31 @@ def test_slack_oauth_routes_redact_token_material() -> None:
     assert complete.status_code == 200
     assert complete.json()["installation"]["status"] == "active"
     assert "token-material" not in complete.text
+
+
+def test_slack_oauth_get_start_redirects_when_configured() -> None:
+    app = TestClient(
+        create_app(
+            Settings(
+                cortex_slack_connector_enabled=True,
+                slack_client_id="client-id",
+                slack_client_secret="",
+                slack_signing_secret="test-secret",
+                slack_redirect_uri="http://localhost/callback",
+            )
+        )
+    )
+
+    response = app.get(
+        "/connectors/slack/oauth/start",
+        params={"workspace_id": "ws_1"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"].startswith(
+        "https://slack.com/oauth/v2/authorize?"
+    )
 
 
 def test_slack_source_selection_route() -> None:

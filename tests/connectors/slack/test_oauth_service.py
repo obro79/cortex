@@ -32,6 +32,21 @@ async def test_oauth_state_required_and_token_stored_by_secret_ref() -> None:
     assert complete["secret_ref"]["external_secret_id"].startswith("local-secret:")
 
 
+def test_oauth_start_returns_authorization_url_when_configured() -> None:
+    services = create_slack_connector_services(
+        client_id="client-id",
+        redirect_uri="http://localhost/callback",
+    )
+
+    start = services.oauth.start_install(workspace_id="ws_1")
+
+    authorization_url = str(start["authorization_url"])
+    assert authorization_url.startswith("https://slack.com/oauth/v2/authorize?")
+    assert "client_id=client-id" in authorization_url
+    assert "redirect_uri=http%3A%2F%2Flocalhost%2Fcallback" in authorization_url
+    assert str(start["state"]) in authorization_url
+
+
 async def test_missing_required_scopes_marks_install_unhealthy() -> None:
     services = create_slack_connector_services()
     services.oauth.client = MissingScopeClient()

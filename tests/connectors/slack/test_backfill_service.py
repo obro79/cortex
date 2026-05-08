@@ -15,6 +15,7 @@ class FakeSlackClient:
     async def conversation_history(
         self,
         *,
+        access_token: str,
         channel_id: str,
         cursor: str | None = None,
         oldest: str | None = None,
@@ -44,7 +45,7 @@ class FakeSlackClient:
         )
 
     async def thread_replies(
-        self, *, channel_id: str, thread_ts: str
+        self, *, access_token: str, channel_id: str, thread_ts: str
     ) -> list[dict[str, Any]]:
         self.reply_calls += 1
         return [

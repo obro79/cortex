@@ -50,6 +50,10 @@ class InMemorySecretRefRepository:
     def get_by_id(self, secret_ref_id: str) -> SecretRef:
         return self._records[secret_ref_id]
 
+    def get_token(self, secret_ref_id: str) -> str:
+        secret = self.get_by_id(secret_ref_id)
+        return self._material[secret.external_secret_id]
+
 
 class InMemoryOAuthInstallationRepository:
     def __init__(self) -> None:

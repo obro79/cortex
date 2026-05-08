@@ -2,16 +2,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from secrets import token_urlsafe
+from typing import Protocol
+from urllib.parse import urlencode
 
 from cortex.contracts.enums import OAuthInstallationStatus
 
+from .client import SlackHttpClient, SlackOAuthError
 from .repositories import (
     InMemoryOAuthInstallationRepository,
     InMemorySecretRefRepository,
 )
 
 REQUIRED_SLACK_SCOPES = frozenset(
-    {"channels:history", "channels:read", "files:read", "links:read"}
+    {
+        "channels:history",
+        "channels:read",
+        "files:read",
+        "groups:history",
+        "groups:read",
+        "links:read",
+        "team:read",
+    }
 )
 
 
@@ -24,13 +35,66 @@ class SlackTokenResponse:
     bot_user_id: str | None = None
 
 
-class SlackOAuthClient:
+class SlackOAuthClient(Protocol):
+    async def exchange_code(self, code: str) -> SlackTokenResponse: ...
+
+
+class FakeSlackOAuthClient:
     async def exchange_code(self, code: str) -> SlackTokenResponse:
         return SlackTokenResponse(
             access_token=f"slack-token-material-{code[-6:]}",
             team_id="T_TEST",
             scopes=set(REQUIRED_SLACK_SCOPES),
             bot_user_id="B_TEST",
+        )
+
+
+class RealSlackOAuthClient:
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        http: SlackHttpClient | None = None,
+    ) -> None:
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = redirect_uri
+        self.http = http or SlackHttpClient()
+
+    async def exchange_code(self, code: str) -> SlackTokenResponse:
+        payload = await self.http.oauth_access(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            code=code,
+            redirect_uri=self.redirect_uri,
+        )
+        token = payload.get("access_token")
+        if not isinstance(token, str) or not token:
+            raise SlackOAuthError("missing_access_token")
+        team = payload.get("team")
+        team_id = (
+            str(team.get("id"))
+            if isinstance(team, dict) and isinstance(team.get("id"), str)
+            else ""
+        )
+        if not team_id:
+            raise SlackOAuthError("missing_team_id")
+        enterprise = payload.get("enterprise")
+        scope_value = payload.get("scope", "")
+        return SlackTokenResponse(
+            access_token=token,
+            team_id=team_id,
+            scopes={scope.strip() for scope in str(scope_value).split(",") if scope},
+            enterprise_id=(
+                str(enterprise.get("id"))
+                if isinstance(enterprise, dict) and enterprise.get("id")
+                else None
+            ),
+            bot_user_id=str(payload["bot_user_id"])
+            if isinstance(payload.get("bot_user_id"), str)
+            else None,
         )
 
 
@@ -41,10 +105,14 @@ class SlackOAuthService:
         secrets: InMemorySecretRefRepository,
         installations: InMemoryOAuthInstallationRepository,
         client: SlackOAuthClient | None = None,
+        client_id: str = "",
+        redirect_uri: str = "",
     ) -> None:
         self.secrets = secrets
         self.installations = installations
-        self.client = client or SlackOAuthClient()
+        self.client = client or FakeSlackOAuthClient()
+        self.client_id = client_id
+        self.redirect_uri = redirect_uri
         self._states: dict[str, tuple[str, str | None]] = {}
 
     def start_install(
@@ -57,6 +125,7 @@ class SlackOAuthService:
             "provider": "slack",
             "state": state,
             "required_scopes": sorted(REQUIRED_SLACK_SCOPES),
+            "authorization_url": self._authorization_url(state),
         }
 
     async def complete_install(self, *, code: str, state: str) -> dict[str, object]:
@@ -64,7 +133,10 @@ class SlackOAuthService:
         if state_record is None:
             return {"ok": False, "error": "invalid_oauth_state"}
         workspace_id, actor_id = state_record
-        token = await self.client.exchange_code(code)
+        try:
+            token = await self.client.exchange_code(code)
+        except SlackOAuthError as exc:
+            return {"ok": False, "error": "oauth_exchange_failed", "reason": str(exc)}
         missing = sorted(REQUIRED_SLACK_SCOPES - token.scopes)
         secret_ref = self.secrets.create_for_token(
             workspace_id=workspace_id,
@@ -94,3 +166,16 @@ class SlackOAuthService:
             "secret_ref": secret_ref.model_dump(mode="json"),
             **({"error": "missing_required_scopes"} if missing else {}),
         }
+
+    def _authorization_url(self, state: str) -> str | None:
+        if not self.client_id or not self.redirect_uri:
+            return None
+        query = urlencode(
+            {
+                "client_id": self.client_id,
+                "scope": ",".join(sorted(REQUIRED_SLACK_SCOPES)),
+                "redirect_uri": self.redirect_uri,
+                "state": state,
+            }
+        )
+        return f"https://slack.com/oauth/v2/authorize?{query}"

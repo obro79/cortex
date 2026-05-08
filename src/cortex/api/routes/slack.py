@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 
 from cortex.connectors.slack.service import SlackConnectorServices
 
@@ -27,6 +28,22 @@ async def start_oauth(request: Request, body: dict[str, Any]) -> dict[str, objec
     )
 
 
+@router.get("/oauth/start")
+async def redirect_oauth_start(
+    request: Request,
+    workspace_id: str,
+    actor_id: str | None = None,
+) -> RedirectResponse:
+    response = get_slack_services(request).oauth.start_install(
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+    )
+    authorization_url = response.get("authorization_url")
+    if not isinstance(authorization_url, str) or not authorization_url:
+        raise HTTPException(status_code=409, detail="slack oauth is not configured")
+    return RedirectResponse(authorization_url)
+
+
 @router.post("/oauth/complete")
 async def complete_oauth(request: Request, body: dict[str, Any]) -> dict[str, object]:
     code = str(body.get("code", ""))
@@ -40,6 +57,35 @@ async def complete_oauth(request: Request, body: dict[str, Any]) -> dict[str, ob
     if not response["ok"]:
         raise HTTPException(status_code=409, detail=response)
     return response
+
+
+@router.get("/oauth/callback")
+async def oauth_callback(
+    request: Request,
+    code: str = Query(default=""),
+    state: str = Query(default=""),
+) -> dict[str, object]:
+    if not code or not state:
+        raise HTTPException(status_code=422, detail="code and state are required")
+    response = await get_slack_services(request).oauth.complete_install(
+        code=code,
+        state=state,
+    )
+    if not response["ok"]:
+        raise HTTPException(status_code=409, detail=response)
+    return response
+
+
+@router.get("/sources/channels")
+async def list_channels(
+    request: Request,
+    oauth_installation_id: str,
+    cursor: str | None = None,
+) -> dict[str, object]:
+    return await get_slack_services(request).sources.list_channels(
+        oauth_installation_id=oauth_installation_id,
+        cursor=cursor,
+    )
 
 
 @router.post("/sources/select")
