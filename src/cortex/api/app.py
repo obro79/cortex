@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from cortex.api.rate_limit import install_api_rate_limit
 from cortex.api.routes.dev import router as dev_router
 from cortex.api.routes.github import router as github_router
 from cortex.api.routes.health import router as health_router
@@ -22,15 +23,34 @@ from cortex.ingestion.durable import SessionRawEventIngestionService
 from cortex.ingestion.payloads import FilePayloadStore, PayloadStore
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
+from cortex.platform import EphemeralCacheService, build_ephemeral_cache
+from cortex.platform.rate_limits import RateLimitPolicy
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    ephemeral_cache: EphemeralCacheService | None = None,
+) -> FastAPI:
     resolved = settings or get_settings()
     setup_logging(resolved.cortex_log_level)
     init_tracing("cortex-api")
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    if resolved.cortex_api_rate_limit_enabled:
+        cache = ephemeral_cache or build_ephemeral_cache(resolved)
+        app.state.ephemeral_cache = cache
+        install_api_rate_limit(
+            app,
+            cache=cache,
+            policy=RateLimitPolicy(
+                name="api",
+                limit=resolved.cortex_api_rate_limit_requests,
+                window_seconds=resolved.cortex_api_rate_limit_window_seconds,
+                namespace="http",
+            ),
+        )
     app.include_router(health_router)
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
