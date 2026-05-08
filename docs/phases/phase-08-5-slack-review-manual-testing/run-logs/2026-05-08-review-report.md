@@ -2,7 +2,7 @@
 
 Date: 2026-05-08
 
-Decision: `BLOCKED`
+Decision: `UNBLOCKED_FOR_PHASE_9`
 
 ## Scope
 
@@ -69,23 +69,46 @@ Confirmed live:
 - `SlackHealthService.workspace_health` now derives OAuth status from workspace
   installation records instead of always returning `active`.
 - Added focused health test coverage for `needs_reauth`.
+- Added `slack-normalizer-v1` for live-shaped Slack message payloads.
+- Registered provider `slack` to the Slack normalizer instead of the fixture
+  normalizer.
+- Added Slack-aware chunking that indexes selected-channel message text with a
+  content-free `Slack thread` citation label and no message text in chunk
+  metadata.
+- Exposed the Slack connector payload store to local pipeline services so
+  raw-event persistence can feed normalization in tests.
+- Added a deterministic embedding worker skeleton that consumes
+  `source_chunk.upserted`, queues `embedding.requested`, and completes
+  `embedding.completed` without Gemini.
+- Added `InMemoryPipelineDispatcher` and wired Slack webhook/backfill routes to
+  drain raw-event, source-object, chunk, and deterministic embedding events
+  after successful intake.
+- Added live-shaped Slack retrieval/context-gate tests proving selected-channel
+  webhook payloads can become embedded evidence without copying Slack text into
+  pipeline event payloads.
 
-## Blocking Findings
+## Former Blocking Finding
 
 ### P1: Live Slack Data Is Not Yet In Retrieval/Gate
 
-Live Slack payloads reach raw-event persistence, but provider `"slack"` still
-uses the fixture normalizer path. There is no dedicated live Slack
-normalizer/chunker/index path that produces source objects, source files,
-chunks, retrieval evidence, and context-gate inputs from live Slack raw events.
+Status: fixed for Phase 8.5 validation.
 
-Required remediation:
+Live-shaped Slack payloads now reach source objects, chunks, deterministic
+embedding records, retrieval evidence, and context-gate inputs through the local
+deterministic retrieval stack. Gemini embedding support remains out of scope for
+this phase.
 
-1. Add a live Slack normalizer for message/thread/file/link raw events.
-2. Route live Slack source objects/source files into chunking and indexing.
-3. Add replay tests for live-shaped Slack raw events.
-4. Add retrieval/evidence/context-gate tests showing live-shaped Slack evidence.
-5. Repeat Phase 8.5 retrieval/gate manual confirmation.
+Validation added:
+
+```bash
+.venv/bin/pytest tests/normalization/test_slack_normalizer.py tests/chunking/test_source_aware_chunker.py tests/connectors/slack/test_live_retrieval_gate.py tests/connectors/slack/test_webhook_service.py tests/connectors/slack/test_backfill_service.py tests/retrieval/test_retrieval_service.py tests/context_gate/test_decision_engine.py
+.venv/bin/pytest tests/workers/test_embedding_worker.py tests/connectors/slack/test_live_retrieval_gate.py tests/embeddings/test_embedding_service.py
+.venv/bin/pytest tests/api/test_slack_webhooks.py tests/workers/test_embedding_worker.py
+.venv/bin/pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/mypy src
+```
 
 ## Non-Blocking Findings
 
@@ -101,12 +124,16 @@ PASS for committed artifacts and API responses reviewed.
 
 No Slack access token, signing secret, client secret, OAuth code/state, raw Slack
 payload, private file URL, or message text is committed in Phase 8.5 run logs.
+New tests also assert Slack message text, private file names, private file URLs,
+and private link URLs are absent from pipeline event payloads.
 
 ## Final Decision
 
-`BLOCKED`
+`UNBLOCKED_FOR_PHASE_9`
 
-Phase 9 should wait. The connector is proven live through raw events, but Phase
-8 completion criteria and Phase 8.5 approval threshold require real Slack data
-to reach retrieval and context gate. That path remains unimplemented for live
-Slack payloads.
+Phase 9 may start from the Phase 8.5 data-path perspective. The connector is
+proven live through raw events, and live-shaped Slack payloads are now proven
+through automatic deterministic embedding, retrieval, and context gate locally.
+Residual risk: the external Slack/ngrok manual walkthrough was not re-run after
+this code change, so hosted or manual live-dev verification should still be
+repeated before treating this as production-ready.

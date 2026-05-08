@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from cortex.contracts.enums import RawEventStatus
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.ingestion.payloads import InMemoryPayloadStore, PayloadNotFoundError
+from cortex.ingestion.payloads import PayloadNotFoundError, PayloadStore
 from cortex.ingestion.raw_events import (
     InMemoryRawEventRepository,
     RawEventNotFoundError,
@@ -35,7 +35,7 @@ class SourceNormalizationService:
         self,
         *,
         raw_events: InMemoryRawEventRepository,
-        payload_store: InMemoryPayloadStore,
+        payload_store: PayloadStore,
         source_objects: InMemorySourceObjectRepository,
         source_files: InMemorySourceFileRepository,
         relationship_seeds: InMemoryRelationshipSeedRepository,

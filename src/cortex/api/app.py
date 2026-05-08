@@ -6,6 +6,8 @@ from cortex.api.routes.slack import router as slack_router
 from cortex.config import Settings, get_settings
 from cortex.connectors.slack.service import create_slack_connector_services
 from cortex.dev.workbench import DevWorkbenchService
+from cortex.events.bus import KafkaEventBus
+from cortex.ingestion.payloads import FilePayloadStore
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
 
@@ -22,11 +24,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.dev_workbench = DevWorkbenchService()
         app.include_router(dev_router)
     if resolved.cortex_slack_connector_enabled:
+        event_bus = None
+        payload_store = None
+        auto_drain_pipeline = True
+        if resolved.cortex_event_bus == "kafka":
+            event_bus = KafkaEventBus(
+                bootstrap_servers=resolved.kafka_bootstrap_servers,
+            )
+            payload_store = FilePayloadStore(
+                resolved.payload_store_path or "/var/lib/cortex/payloads"
+            )
+            auto_drain_pipeline = False
         app.state.slack_connector = create_slack_connector_services(
             signing_secret=resolved.slack_signing_secret or "local-signing-secret",
             client_id=resolved.slack_client_id,
             client_secret=resolved.slack_client_secret,
             redirect_uri=resolved.slack_redirect_uri,
+            event_bus=event_bus,
+            payload_store=payload_store,
+            auto_drain_pipeline=auto_drain_pipeline,
         )
         app.include_router(slack_router)
     return app

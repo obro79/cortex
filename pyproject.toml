@@ -5,6 +5,7 @@ description = "Production-shaped Cortex backend skeleton"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "aiokafka>=0.10",
   "alembic>=1.13",
   "asyncpg>=0.29",
   "fastapi>=0.115",
@@ -56,5 +57,5 @@ strict = true
 packages = ["cortex"]
 
 [[tool.mypy.overrides]]
-module = ["opentelemetry.*"]
+module = ["aiokafka.*", "opentelemetry.*"]
 ignore_missing_imports = true

@@ -74,6 +74,7 @@ class SourceObject(EntityModel):
     source_updated_at: datetime | None = None
     normalized_version: str | None = None
     content_hash: str | None = None
+    content_text: str | None = None
     metadata_json: JsonObject = Field(default_factory=dict)
     status: SourceObjectStatus
     superseded_by_id: str | None = None

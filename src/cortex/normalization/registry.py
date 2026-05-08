@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from cortex.contracts.entities import RawEvent
 from cortex.normalization.normalizers.fixtures import normalize_fixture_payload
+from cortex.normalization.normalizers.slack import normalize_slack_payload
 from cortex.normalization.result import NormalizationResult
 
 Normalizer = Callable[[RawEvent, bytes], NormalizationResult]
@@ -17,7 +18,7 @@ class NormalizerRegistry:
     def __init__(self) -> None:
         self._normalizers: dict[str, Normalizer] = {
             "fixture": normalize_fixture_payload,
-            "slack": normalize_fixture_payload,
+            "slack": normalize_slack_payload,
             "linear": normalize_fixture_payload,
             "github": normalize_fixture_payload,
             "repo_docs": normalize_fixture_payload,

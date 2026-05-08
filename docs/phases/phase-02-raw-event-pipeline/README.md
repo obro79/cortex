@@ -12,3 +12,7 @@ Planning artifacts:
 - [`test-plan.md`](test-plan.md)
 - [`autoplan-review.md`](autoplan-review.md)
 - [`plan-eng-review.md`](plan-eng-review.md)
+
+Current follow-up: Phase 2 originally completed the pointer-only event contract
+and in-memory bus boundary. Real Apache Kafka producer/consumer work is tracked
+as a Phase 2 follow-up using ADR-022.

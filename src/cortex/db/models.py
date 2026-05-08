@@ -7,6 +7,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -135,6 +136,7 @@ class SourceObjectRecord(Base):
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     normalized_version: Mapped[str | None] = mapped_column(String(128))
     content_hash: Mapped[str | None] = mapped_column(String(128))
+    content_text: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict[str, object]] = mapped_column(
         JSON, nullable=False, default=dict
     )

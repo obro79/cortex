@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .payloads import InMemoryPayloadStore
+from .payloads import PayloadStore
 from .publisher import RawEventPublisher
 from .raw_events import InMemoryRawEventRepository, RawEventInput
 
@@ -18,7 +18,7 @@ class RawEventIngestionService:
     def __init__(
         self,
         repository: InMemoryRawEventRepository,
-        payload_store: InMemoryPayloadStore,
+        payload_store: PayloadStore,
         publisher: RawEventPublisher,
     ) -> None:
         self.repository = repository

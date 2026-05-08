@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     cortex_slack_connector_enabled: bool = Field(
         default=False, alias="CORTEX_SLACK_CONNECTOR_ENABLED"
     )
+    cortex_event_bus: Literal["memory", "kafka"] = Field(
+        default="memory", alias="CORTEX_EVENT_BUS"
+    )
     slack_client_id: str = Field(default="", alias="SLACK_CLIENT_ID")
     slack_client_secret: str = Field(default="", alias="SLACK_CLIENT_SECRET")
     slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")
@@ -29,6 +32,10 @@ class Settings(BaseSettings):
     slack_team_id: str = Field(default="", alias="SLACK_TEAM_ID")
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
+    kafka_consumer_group: str = Field(
+        default="cortex-pipeline-v1", alias="KAFKA_CONSUMER_GROUP"
+    )
+    payload_store_path: str = Field(default="", alias="PAYLOAD_STORE_PATH")
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
     redis_url: str = Field(default="", alias="REDIS_URL")

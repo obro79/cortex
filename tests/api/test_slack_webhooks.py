@@ -93,7 +93,24 @@ def test_slack_webhook_persists_selected_message_without_content_leak() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "persisted"
     assert response.json()["raw_event_created"] is True
+    assert response.json()["pipeline"] == {
+        "processed_event_count": 5,
+        "normalization_count": 1,
+        "chunking_count": 1,
+        "embedding_count": 2,
+    }
     assert "private message text" not in response.text
+    services = app.app.state.slack_connector
+    assert [event.event_type for event in services.event_bus.list_events()] == [
+        "raw_event.persisted",
+        "source_object.upserted",
+        "source_chunk.upserted",
+        "embedding.requested",
+        "embedding.completed",
+    ]
+    assert "private message text" not in str(
+        [event.payload for event in services.event_bus.list_events()]
+    )
 
 
 def test_slack_webhook_rejects_invalid_signature() -> None:
