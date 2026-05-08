@@ -38,6 +38,13 @@ class InMemorySourceChunkRepository:
             and chunk.source_object_id == source_object_id
         ]
 
+    def list_all(self, workspace_id: str | None = None) -> list[SourceChunk]:
+        return [
+            chunk
+            for chunk in self._records.values()
+            if workspace_id is None or chunk.workspace_id == workspace_id
+        ]
+
     def search_fts(
         self,
         *,
@@ -159,6 +166,13 @@ class SqlAlchemySourceChunkRepository:
             )
             .order_by(SourceChunkRecord.chunk_index, SourceChunkRecord.id)
         )
+        return [source_chunk_from_record(record) for record in result.scalars()]
+
+    async def list_all(self, workspace_id: str | None = None) -> list[SourceChunk]:
+        statement = select(SourceChunkRecord)
+        if workspace_id is not None:
+            statement = statement.where(SourceChunkRecord.workspace_id == workspace_id)
+        result = await self.session.execute(statement)
         return [source_chunk_from_record(record) for record in result.scalars()]
 
     async def search_fts(

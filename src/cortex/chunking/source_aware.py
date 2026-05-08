@@ -41,6 +41,14 @@ class SourceAwareChunker:
     ) -> list[SourceChunk]:
         if source_object.object_type == "slack_thread":
             return self._chunks_for_slack_thread(source_object)
+        if source_object.content_text and source_object.object_type in {
+            "linear_issue",
+            "github_pull_request",
+            "github_issue",
+            "github_commit",
+            "repo_doc",
+        }:
+            return self._chunks_for_provider_text(source_object)
 
         title = source_object.title or source_object.external_object_id
         source_kind = source_object.metadata_json.get(
@@ -59,6 +67,85 @@ class SourceAwareChunker:
                 chunk_index=0,
                 text=text,
                 created_from_hash=source_object.content_hash,
+            )
+        ]
+
+    def _chunks_for_provider_text(
+        self, source_object: SourceObject
+    ) -> list[SourceChunk]:
+        if not source_object.content_text:
+            return []
+        citation_label_by_type = {
+            "linear_issue": "Linear issue",
+            "github_pull_request": "GitHub pull request",
+            "github_issue": "GitHub issue",
+            "github_commit": "GitHub commit",
+            "repo_doc": "Repo doc",
+        }
+        metadata_keys = {
+            "linear_issue": (
+                "source_kind",
+                "identifier",
+                "team_id",
+                "project_id",
+                "status",
+                "assignee_id",
+                "label_ids",
+                "comment_count",
+                "has_blockers",
+            ),
+            "github_pull_request": (
+                "source_kind",
+                "repo_id",
+                "repo_name_hash",
+                "number",
+                "sha",
+                "comment_count",
+                "changed_file_count",
+                "changed_file_paths",
+            ),
+            "github_issue": (
+                "source_kind",
+                "repo_id",
+                "repo_name_hash",
+                "number",
+                "comment_count",
+            ),
+            "github_commit": (
+                "source_kind",
+                "repo_id",
+                "repo_name_hash",
+                "sha",
+                "changed_file_count",
+                "changed_file_paths",
+            ),
+            "repo_doc": (
+                "source_kind",
+                "repo_id",
+                "path",
+                "ref",
+                "operation",
+                "is_stale",
+            ),
+        }
+        metadata = {
+            "object_type": source_object.object_type,
+            **{
+                key: source_object.metadata_json.get(key)
+                for key in metadata_keys[source_object.object_type]
+                if key in source_object.metadata_json
+            },
+        }
+        return [
+            self._chunk(
+                source_object=source_object,
+                source_file=None,
+                chunk_type=f"{source_object.object_type}_overview",
+                chunk_index=0,
+                text=source_object.content_text,
+                created_from_hash=source_object.content_hash,
+                citation_label=citation_label_by_type[source_object.object_type],
+                metadata_json=metadata,
             )
         ]
 
