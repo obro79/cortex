@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = Field(
         default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
     )
+    cortex_otel_enabled: bool = Field(default=False, alias="CORTEX_OTEL_ENABLED")
+    cortex_service_name: str = Field(default="cortex", alias="CORTEX_SERVICE_NAME")
 
     @classmethod
     def settings_customise_sources(

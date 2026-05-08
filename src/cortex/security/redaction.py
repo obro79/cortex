@@ -15,6 +15,7 @@ SENSITIVE_KEY_PARTS = (
     "password",
     "payload",
     "private_url",
+    "query",
     "raw",
     "secret",
     "source_text",
