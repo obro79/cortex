@@ -55,23 +55,28 @@ class SessionRawEventIngestionService:
                 return IngestionResult(
                     raw_event_id=raw_event.id, created=False, published=False
                 )
-            publisher = RawEventPublisher(self.event_bus)
-            try:
-                await publisher.publish_persisted(raw_event)
-            except Exception as error:
+            await session.commit()
+
+        publisher = RawEventPublisher(self.event_bus)
+        try:
+            await publisher.publish_persisted(raw_event)
+        except Exception as error:
+            async with self.session_factory() as session:
+                repository = SqlAlchemyRawEventRepository(session)
                 await repository.mark_failed_retryable(
                     raw_event.id,
                     "publish_failed",
                     type(error).__name__,
                 )
                 await session.commit()
-                return IngestionResult(
-                    raw_event_id=raw_event.id,
-                    created=True,
-                    published=False,
-                )
+            return IngestionResult(
+                raw_event_id=raw_event.id,
+                created=True,
+                published=False,
+            )
+
+        async with self.session_factory() as session:
+            repository = SqlAlchemyRawEventRepository(session)
             await repository.mark_published(raw_event.id)
             await session.commit()
-            return IngestionResult(
-                raw_event_id=raw_event.id, created=True, published=True
-            )
+        return IngestionResult(raw_event_id=raw_event.id, created=True, published=True)

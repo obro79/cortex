@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.workers.kafka import KafkaPipelineConsumer
+from cortex.workers.kafka import KafkaPipelineConsumer, RetryablePipelineError
 
 
 @dataclass(frozen=True)
@@ -32,12 +32,15 @@ class FakeProducer:
 
 
 class FakeDispatcher:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, retryable: bool = False) -> None:
         self.fail = fail
+        self.retryable = retryable
         self.seen: list[str] = []
 
     async def drain(self, event_bus) -> None:
         self.seen.append(event_bus.events[0].event_type)
+        if self.retryable:
+            raise RetryablePipelineError("not ready")
         if self.fail:
             raise RuntimeError("boom")
 
@@ -96,3 +99,22 @@ async def test_kafka_consumer_deadletters_handler_failures_without_content() -> 
     assert key == b"ws_1:slack:T1:C1:1"
     assert deadletter.payload["error_code"] == "handler_failed"
     assert "raw payload" not in str(deadletter.payload)
+
+
+async def test_kafka_consumer_does_not_commit_retryable_dispatch() -> None:
+    consumer = FakeConsumer()
+    producer = FakeProducer()
+    worker = KafkaPipelineConsumer(
+        bootstrap_servers="localhost:9092",
+        group_id="group",
+        dispatcher=FakeDispatcher(retryable=True),  # type: ignore[arg-type]
+        consumer=consumer,
+        producer=producer,
+    )
+
+    result = await worker.handle_message(Message(envelope().model_dump_json().encode()))
+
+    assert result.status == "retryable"
+    assert result.reason == "not ready"
+    assert consumer.commits == 0
+    assert producer.sent == []

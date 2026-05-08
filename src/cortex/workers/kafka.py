@@ -20,6 +20,10 @@ class PipelineDispatcher(Protocol):
     async def drain(self, event_bus: InMemoryEventBus) -> object: ...
 
 
+class RetryablePipelineError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class KafkaConsumerResult:
     status: str
@@ -108,6 +112,13 @@ class KafkaPipelineConsumer:
 
         try:
             await self._dispatch(envelope)
+        except RetryablePipelineError as error:
+            return KafkaConsumerResult(
+                status="retryable",
+                event_type=envelope.event_type,
+                event_id=envelope.event_id,
+                reason=str(error) or type(error).__name__,
+            )
         except Exception as error:
             await self._publish_deadletter(
                 message=message,

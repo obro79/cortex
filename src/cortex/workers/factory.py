@@ -27,7 +27,7 @@ from cortex.normalization.repositories import (
 )
 from cortex.normalization.service import SourceNormalizationService
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
-from cortex.workers.kafka import KafkaPipelineConsumer
+from cortex.workers.kafka import KafkaPipelineConsumer, RetryablePipelineError
 
 
 @dataclass(frozen=True)
@@ -57,19 +57,33 @@ class SqlPipelineDispatcher:
     async def drain(self, event_bus: InMemoryEventBus) -> object:
         processed = 0
         for envelope in event_bus.events:
+            buffered_events = InMemoryEventBus()
+            result: object | None = None
             async with self.session_factory() as session:
                 try:
-                    await self._dispatch(session, envelope)
+                    result = await self._dispatch(session, envelope, buffered_events)
                     await session.commit()
-                    processed += 1
                 except Exception:
                     await session.rollback()
                     raise
+            if _result_status(result) == "retryable":
+                raise RetryablePipelineError(f"retryable handler result: {result!r}")
+            for buffered_event in buffered_events.events:
+                try:
+                    await self.event_bus.publish(buffered_event)
+                except Exception as error:
+                    raise RetryablePipelineError(
+                        f"downstream publish failed: {type(error).__name__}"
+                    ) from error
+            processed += 1
         return {"processed_event_count": processed}
 
     async def _dispatch(
-        self, session: AsyncSession, envelope: PipelineEventEnvelope
-    ) -> None:
+        self,
+        session: AsyncSession,
+        envelope: PipelineEventEnvelope,
+        event_bus: InMemoryEventBus,
+    ) -> object | None:
         source_objects = SqlAlchemySourceObjectRepository(session)
         source_files = SqlAlchemySourceFileRepository(session)
         source_chunks = SqlAlchemySourceChunkRepository(session)
@@ -79,15 +93,15 @@ class SqlPipelineDispatcher:
             source_objects=source_objects,
             source_files=source_files,
             relationship_seeds=SqlAlchemyRelationshipSeedRepository(session),
-            source_object_publisher=SourceObjectPublisher(self.event_bus),
-            source_file_publisher=SourceFilePublisher(self.event_bus),
+            source_object_publisher=SourceObjectPublisher(event_bus),
+            source_file_publisher=SourceFilePublisher(event_bus),
         )
         chunking = ChunkingService(
             source_objects=source_objects,
             source_files=source_files,
             source_chunks=source_chunks,
             chunker=SourceAwareChunker(self.retrieval_config.chunking),
-            publisher=SourceChunkPublisher(self.event_bus),
+            publisher=SourceChunkPublisher(event_bus),
         )
         embedding_service = EmbeddingService(
             source_chunks=source_chunks,
@@ -96,19 +110,30 @@ class SqlPipelineDispatcher:
                 dimensions=16,
                 version=self.retrieval_config.embeddings.version,
             ),
-            publisher=EmbeddingPublisher(self.event_bus),
+            publisher=EmbeddingPublisher(event_bus),
         )
         embeddings = EmbeddingWorkerSkeleton(embedding_service)
         if envelope.event_type == "raw_event.persisted":
-            await normalization.handle_raw_event_persisted(envelope)
+            return await normalization.handle_raw_event_persisted(envelope)
         elif envelope.event_type == "source_object.upserted":
-            await chunking.handle_source_object_upserted(envelope)
+            return await chunking.handle_source_object_upserted(envelope)
         elif envelope.event_type == "source_file.fetched":
-            await chunking.handle_source_file_fetched(envelope)
+            return await chunking.handle_source_file_fetched(envelope)
         elif envelope.event_type == "source_chunk.upserted":
-            await embeddings.handle_source_chunk_upserted(envelope)
+            return await embeddings.handle_source_chunk_upserted(envelope)
         elif envelope.event_type == "embedding.requested":
-            await embeddings.handle_embedding_requested(envelope)
+            return await embeddings.handle_embedding_requested(envelope)
+        return None
+
+
+def _result_status(result: object | None) -> str | None:
+    if result is None:
+        return None
+    if isinstance(result, dict):
+        value = result.get("status")
+        return str(value) if value is not None else None
+    value = getattr(result, "status", None)
+    return str(value) if value is not None else None
 
 
 def durable_pipeline_settings(settings: Settings) -> DurablePipelineSettings:
