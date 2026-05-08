@@ -13,6 +13,7 @@ from cortex.contracts.enums import (
     EvidencePackStatus,
     IndexJobStatus,
     OAuthInstallationStatus,
+    PermissionScopeStatus,
     ProviderCursorStatus,
     RawEventStatus,
     SecretRefStatus,
@@ -375,3 +376,41 @@ class ProviderCursor(EntityModel):
     metadata_json: JsonObject = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class PermissionScope(EntityModel):
+    id: str
+    workspace_id: str
+    provider: str
+    scope_type: str
+    external_id_hash: str
+    status: PermissionScopeStatus
+    metadata_json: JsonObject = Field(default_factory=dict)
+    created_by_actor_id: str | None = None
+    removed_by_actor_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    removed_at: datetime | None = None
+
+
+class PermissionSnapshot(EntityModel):
+    id: str
+    workspace_id: str
+    snapshot_hash: str
+    scope_count: int = Field(ge=0)
+    provider_counts_json: JsonObject = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AuditLog(EntityModel):
+    id: str
+    workspace_id: str
+    actor_id: str | None = None
+    action: str
+    target_type: str
+    target_id_hash: str | None = None
+    decision: str
+    reason: str | None = None
+    metadata_json: JsonObject = Field(default_factory=dict)
+    trace_id: str | None = None
+    created_at: datetime

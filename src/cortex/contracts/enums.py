@@ -128,3 +128,9 @@ class ProviderCursorStatus(StrEnum):
     STALE = "stale"
     FAILED = "failed"
     RESET_REQUESTED = "reset_requested"
+
+
+class PermissionScopeStatus(StrEnum):
+    ACTIVE = "active"
+    REMOVED = "removed"
+    DISABLED = "disabled"

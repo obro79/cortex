@@ -1,26 +1,16 @@
 """Pipeline event envelope contracts for Kafka-carried work notifications."""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cortex.contracts.ids import JsonObject
+from cortex.security.redaction import FORBIDDEN_CONTENT_KEYS, assert_payload_safe
 
 PIPELINE_EVENT_SCHEMA_VERSION: Literal["pipeline-event-v1"] = "pipeline-event-v1"
 
-FORBIDDEN_PAYLOAD_KEYS = frozenset(
-    {
-        "raw_payload",
-        "source_text",
-        "chunk_text",
-        "ocr_text",
-        "embedding",
-        "vector",
-        "oauth_token",
-        "secret",
-    }
-)
+FORBIDDEN_PAYLOAD_KEYS = FORBIDDEN_CONTENT_KEYS
 
 
 class ContractModel(BaseModel):
@@ -102,24 +92,5 @@ class PipelineEventEnvelope(ContractModel):
 
     @model_validator(mode="after")
     def payload_must_not_carry_content_or_secrets(self) -> "PipelineEventEnvelope":
-        forbidden = sorted(FORBIDDEN_PAYLOAD_KEYS.intersection(self.payload.keys()))
-        if forbidden:
-            found = ", ".join(forbidden)
-            msg = f"payload contains forbidden content-bearing keys: {found}"
-            raise ValueError(msg)
-        self._reject_nested_forbidden_payload_keys(self.payload)
+        assert_payload_safe(self.payload)
         return self
-
-    @classmethod
-    def _reject_nested_forbidden_payload_keys(cls, value: Any) -> None:
-        if isinstance(value, dict):
-            forbidden = sorted(FORBIDDEN_PAYLOAD_KEYS.intersection(value.keys()))
-            if forbidden:
-                found = ", ".join(forbidden)
-                msg = f"payload contains forbidden content-bearing keys: {found}"
-                raise ValueError(msg)
-            for child in value.values():
-                cls._reject_nested_forbidden_payload_keys(child)
-        elif isinstance(value, list):
-            for child in value:
-                cls._reject_nested_forbidden_payload_keys(child)
