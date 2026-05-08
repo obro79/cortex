@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cortex.contracts.entities import OAuthInstallation
 from cortex.contracts.enums import BackfillJobStatus, OAuthInstallationStatus
 
 from .repositories import (
@@ -25,6 +26,7 @@ class SlackHealthService:
         self.backfills = backfills
 
     def workspace_health(self, workspace_id: str) -> dict[str, object]:
+        installations = self.installations.list_for_workspace(workspace_id)
         selected = self.source_connections.list_selected(workspace_id)
         jobs = self.backfills.list_for_workspace(workspace_id)
         deadletters = [
@@ -48,5 +50,22 @@ class SlackHealthService:
             ),
             "deadletter_count": len(deadletters),
             "retrying_count": len(retrying),
-            "oauth_status": OAuthInstallationStatus.ACTIVE,
+            "oauth_status": _workspace_oauth_status(installations),
         }
+
+
+def _workspace_oauth_status(
+    installations: list[OAuthInstallation],
+) -> OAuthInstallationStatus:
+    statuses = [installation.status for installation in installations]
+    if not statuses:
+        return OAuthInstallationStatus.INSTALLING
+    if OAuthInstallationStatus.ACTIVE in statuses:
+        return OAuthInstallationStatus.ACTIVE
+    if OAuthInstallationStatus.NEEDS_REAUTH in statuses:
+        return OAuthInstallationStatus.NEEDS_REAUTH
+    if OAuthInstallationStatus.REVOKED in statuses:
+        return OAuthInstallationStatus.REVOKED
+    if OAuthInstallationStatus.DISABLED in statuses:
+        return OAuthInstallationStatus.DISABLED
+    return OAuthInstallationStatus.INSTALLING

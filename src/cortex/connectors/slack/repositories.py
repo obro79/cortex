@@ -119,6 +119,13 @@ class InMemoryOAuthInstallationRepository:
     def get_by_id(self, installation_id: str) -> OAuthInstallation:
         return self._records[installation_id]
 
+    def list_for_workspace(self, workspace_id: str) -> list[OAuthInstallation]:
+        return [
+            record
+            for record in self._records.values()
+            if record.workspace_id == workspace_id and record.provider == "slack"
+        ]
+
 
 class InMemorySourceConnectionRepository:
     def __init__(self) -> None:
