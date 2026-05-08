@@ -55,6 +55,26 @@ async def backfill(
     )
 
 
+@router.post("/backfill-live/{source_connection_id}")
+async def backfill_live(
+    request: Request, source_connection_id: str, body: dict[str, Any]
+) -> dict[str, object]:
+    workspace_id = str(body.get("workspace_id", ""))
+    owner = str(body.get("owner", ""))
+    repo = str(body.get("repo", ""))
+    if not workspace_id or not owner or not repo:
+        raise HTTPException(
+            status_code=422, detail="workspace_id, owner, repo required"
+        )
+    return await get_github_services(request).live_backfill(
+        workspace_id=workspace_id,
+        source_connection_id=source_connection_id,
+        owner=owner,
+        repo=repo,
+        limit=int(body.get("limit", 25)),
+    )
+
+
 @router.post("/events")
 async def github_events(
     request: Request,

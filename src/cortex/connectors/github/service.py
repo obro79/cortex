@@ -13,6 +13,8 @@ from cortex.ingestion.publisher import RawEventPublisher
 from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
 from cortex.ingestion.service import IngestionResult, RawEventIngestionService
 
+from .client import EmptyGitHubClient, GitHubClient
+
 
 class GitHubIngestionService(Protocol):
     async def ingest(self, item: RawEventInput) -> IngestionResult: ...
@@ -21,6 +23,8 @@ class GitHubIngestionService(Protocol):
 @dataclass
 class GitHubConnectorServices:
     app_configured: bool = False
+    installation_token: str = ""
+    client: GitHubClient = field(default_factory=EmptyGitHubClient)
     webhook_secret: str = ""
     repo_ids: set[str] = field(default_factory=set)
     raw_events: InMemoryRawEventRepository = field(
@@ -39,15 +43,24 @@ class GitHubConnectorServices:
             )
 
     def install_app(
-        self, *, workspace_id: str, app_id: str, private_key: str
+        self,
+        *,
+        workspace_id: str,
+        app_id: str,
+        private_key: str,
+        installation_token: str = "",
     ) -> dict[str, object]:
-        self.app_configured = bool(app_id and private_key)
+        self.app_configured = bool((app_id and private_key) or installation_token)
+        self.installation_token = installation_token
         return {
             "ok": self.app_configured,
             "workspace_id": workspace_id,
             "auth_type": "github_app",
             "app_id": app_id if app_id else None,
             "private_key_ref": "github_private_key" if private_key else None,
+            "installation_token_ref": "github_installation_token"
+            if installation_token
+            else None,
         }
 
     def select_repos(
@@ -92,6 +105,30 @@ class GitHubConnectorServices:
             created += int(result.created)
             duplicates += int(not result.created)
         return {"ok": True, "raw_events_created": created, "duplicates": duplicates}
+
+    async def live_backfill(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str,
+        owner: str,
+        repo: str,
+        limit: int = 25,
+    ) -> dict[str, object]:
+        if not self.installation_token:
+            return {"ok": False, "error": "github_installation_token_required"}
+        backfill = await self.client.backfill_repository(
+            access_token=self.installation_token,
+            owner=owner,
+            repo=repo,
+            limit=limit,
+        )
+        result = await self.backfill(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            events=backfill.events,
+        )
+        return {"ok": True, "fetched": len(backfill.events), **result}
 
     async def webhook(
         self,

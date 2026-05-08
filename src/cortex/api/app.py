@@ -9,7 +9,9 @@ from cortex.api.routes.linear import router as linear_router
 from cortex.api.routes.repo_docs import router as repo_docs_router
 from cortex.api.routes.slack import router as slack_router
 from cortex.config import Settings, get_settings
+from cortex.connectors.github.client import RealGitHubClient
 from cortex.connectors.github.service import GitHubConnectorServices
+from cortex.connectors.linear.client import RealLinearClient
 from cortex.connectors.linear.service import LinearConnectorServices
 from cortex.connectors.repo_docs.service import RepoDocsConnectorServices
 from cortex.connectors.slack.service import create_slack_connector_services
@@ -74,6 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             linear_kwargs["ingestion"] = ingestion_service
         app.state.linear_connector = LinearConnectorServices(
             api_token_configured=bool(resolved.linear_api_token),
+            api_token=resolved.linear_api_token,
+            client=RealLinearClient(),
             **linear_kwargs,
         )
         app.include_router(linear_router)
@@ -86,7 +90,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if ingestion_service is not None:
             github_kwargs["ingestion"] = ingestion_service
         app.state.github_connector = GitHubConnectorServices(
-            app_configured=bool(resolved.github_app_id and resolved.github_private_key),
+            app_configured=bool(
+                (resolved.github_app_id and resolved.github_private_key)
+                or resolved.github_installation_token
+            ),
+            installation_token=resolved.github_installation_token,
+            client=RealGitHubClient(),
             webhook_secret=resolved.github_webhook_secret,
             **github_kwargs,
         )

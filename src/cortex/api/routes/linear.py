@@ -57,6 +57,20 @@ async def backfill(
     )
 
 
+@router.post("/backfill-live/{source_connection_id}")
+async def backfill_live(
+    request: Request, source_connection_id: str, body: dict[str, Any]
+) -> dict[str, object]:
+    workspace_id = str(body.get("workspace_id", ""))
+    if not workspace_id:
+        raise HTTPException(status_code=422, detail="workspace_id is required")
+    return await get_linear_services(request).live_backfill(
+        workspace_id=workspace_id,
+        source_connection_id=source_connection_id,
+        limit=int(body.get("limit", 25)),
+    )
+
+
 @router.get("/health/{workspace_id}")
 async def health(request: Request, workspace_id: str) -> dict[str, object]:
     return get_linear_services(request).health(workspace_id)

@@ -10,6 +10,8 @@ from cortex.ingestion.publisher import RawEventPublisher
 from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
 from cortex.ingestion.service import IngestionResult, RawEventIngestionService
 
+from .client import EmptyLinearClient, LinearClient
+
 
 class LinearIngestionService(Protocol):
     async def ingest(self, item: RawEventInput) -> IngestionResult: ...
@@ -18,6 +20,8 @@ class LinearIngestionService(Protocol):
 @dataclass
 class LinearConnectorServices:
     api_token_configured: bool = False
+    api_token: str = ""
+    client: LinearClient = field(default_factory=EmptyLinearClient)
     source_ids: set[str] = field(default_factory=set)
     raw_events: InMemoryRawEventRepository = field(
         default_factory=InMemoryRawEventRepository
@@ -36,6 +40,7 @@ class LinearConnectorServices:
 
     def install_api_token(self, *, workspace_id: str, token: str) -> dict[str, object]:
         self.api_token_configured = bool(token)
+        self.api_token = token
         return {
             "ok": self.api_token_configured,
             "workspace_id": workspace_id,
@@ -90,6 +95,33 @@ class LinearConnectorServices:
             duplicates += int(not result.created)
         return {"ok": True, "raw_events_created": created, "duplicates": duplicates}
 
+    async def live_backfill(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str,
+        limit: int = 25,
+    ) -> dict[str, object]:
+        if not self.api_token:
+            return {"ok": False, "error": "linear_api_token_required"}
+        issues: list[dict[str, Any]] = []
+        source_ids: list[str | None] = list(sorted(self.source_ids))
+        if not source_ids:
+            source_ids = [None]
+        for source_id in source_ids:
+            page = await self.client.list_issues(
+                api_token=self.api_token,
+                team_or_project_id=source_id,
+                limit=limit,
+            )
+            issues.extend(_normalize_issue_payload(issue) for issue in page.issues)
+        result = await self.backfill(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            issues=issues,
+        )
+        return {"ok": True, "fetched": len(issues), **result}
+
     def health(self, workspace_id: str) -> dict[str, object]:
         return {
             "ok": True,
@@ -106,3 +138,14 @@ def _scope_id(issue: dict[str, Any]) -> str | None:
         if isinstance(value, dict) and value.get("id"):
             return str(value["id"])
     return None
+
+
+def _normalize_issue_payload(issue: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(issue)
+    labels = normalized.get("labels")
+    if isinstance(labels, dict) and isinstance(labels.get("nodes"), list):
+        normalized["labels"] = labels["nodes"]
+    comments = normalized.get("comments")
+    if isinstance(comments, dict) and isinstance(comments.get("nodes"), list):
+        normalized["comments"] = comments["nodes"]
+    return normalized

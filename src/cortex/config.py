@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     linear_api_token: str = Field(default="", alias="LINEAR_API_TOKEN")
     github_app_id: str = Field(default="", alias="GITHUB_APP_ID")
     github_private_key: str = Field(default="", alias="GITHUB_PRIVATE_KEY")
+    github_installation_token: str = Field(
+        default="", alias="GITHUB_INSTALLATION_TOKEN"
+    )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
