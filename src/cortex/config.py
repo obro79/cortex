@@ -116,7 +116,14 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         yaml_file = os.getenv("CORTEX_CONFIG_FILE")
+        include_dotenv = not os.getenv("CORTEX_DISABLE_DOTENV")
         if not yaml_file:
+            if not include_dotenv:
+                return (
+                    init_settings,
+                    env_settings,
+                    file_secret_settings,
+                )
             return (
                 init_settings,
                 env_settings,
@@ -124,6 +131,13 @@ class Settings(BaseSettings):
                 file_secret_settings,
             )
         yaml_settings = YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file)
+        if not include_dotenv:
+            return (
+                init_settings,
+                env_settings,
+                yaml_settings,
+                file_secret_settings,
+            )
         return (
             init_settings,
             env_settings,
