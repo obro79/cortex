@@ -19,7 +19,7 @@ async def test_health_reports_selected_channels_cursors_and_failures() -> None:
     complete = await services.oauth.complete_install(
         code="code_123", state=str(start["state"])
     )
-    selected = services.sources.select_channels(
+    selected = await services.sources.select_channels(
         workspace_id="ws_1",
         oauth_installation_id=complete["installation"]["id"],
         channels=[{"id": "C123"}],
@@ -29,7 +29,7 @@ async def test_health_reports_selected_channels_cursors_and_failures() -> None:
     await services.backfill.backfill_source(
         workspace_id="ws_1", source_connection_id=source_id
     )
-    health = services.health.workspace_health("ws_1")
+    health = await services.health.workspace_health("ws_1")
 
     assert health["provider"] == "slack"
     assert health["selected_channel_count"] == 1
@@ -57,6 +57,6 @@ async def test_health_reports_missing_scope_reauth_status() -> None:
         health_json={"missing_scopes": ["channels:history"], "ok": False},
     )
 
-    health = services.health.workspace_health("ws_1")
+    health = await services.health.workspace_health("ws_1")
 
     assert health["oauth_status"] == OAuthInstallationStatus.NEEDS_REAUTH

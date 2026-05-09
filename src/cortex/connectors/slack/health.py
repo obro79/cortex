@@ -1,41 +1,43 @@
 from __future__ import annotations
 
+from typing import Any
+
 from cortex.contracts.entities import OAuthInstallation
 from cortex.contracts.enums import BackfillJobStatus, OAuthInstallationStatus
-
-from .repositories import (
-    InMemoryBackfillJobRepository,
-    InMemoryOAuthInstallationRepository,
-    InMemoryProviderCursorRepository,
-    InMemorySourceConnectionRepository,
-)
+from cortex.utils.asyncio import maybe_await
 
 
 class SlackHealthService:
     def __init__(
         self,
         *,
-        installations: InMemoryOAuthInstallationRepository,
-        source_connections: InMemorySourceConnectionRepository,
-        cursors: InMemoryProviderCursorRepository,
-        backfills: InMemoryBackfillJobRepository,
+        installations: Any,
+        source_connections: Any,
+        cursors: Any,
+        backfills: Any,
     ) -> None:
         self.installations = installations
         self.source_connections = source_connections
         self.cursors = cursors
         self.backfills = backfills
 
-    def workspace_health(self, workspace_id: str) -> dict[str, object]:
-        installations = self.installations.list_for_workspace(workspace_id)
-        selected = self.source_connections.list_selected(workspace_id)
-        jobs = self.backfills.list_for_workspace(workspace_id)
+    async def workspace_health(self, workspace_id: str) -> dict[str, object]:
+        installations = await maybe_await(
+            self.installations.list_for_workspace(workspace_id)
+        )
+        selected = await maybe_await(
+            self.source_connections.list_selected(workspace_id)
+        )
+        jobs = await maybe_await(self.backfills.list_for_workspace(workspace_id))
         deadletters = [
             job for job in jobs if job.status == BackfillJobStatus.DEADLETTERED
         ]
         retrying = [job for job in jobs if job.status == BackfillJobStatus.RETRYING]
         cursors = [
-            self.cursors.get_for_source(
-                workspace_id=workspace_id, source_connection_id=source.id
+            await maybe_await(
+                self.cursors.get_for_source(
+                    workspace_id=workspace_id, source_connection_id=source.id
+                )
             )
             for source in selected
         ]

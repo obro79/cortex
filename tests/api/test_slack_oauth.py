@@ -61,6 +61,25 @@ def test_slack_oauth_get_start_redirects_when_configured() -> None:
     )
 
 
+def test_sql_slack_connector_requires_secret_encryption_key(tmp_path) -> None:
+    try:
+        create_app(
+            Settings(
+                _env_file=None,
+                cortex_slack_connector_enabled=True,
+                cortex_state_backend="sql",
+                cortex_event_bus="kafka",
+                database_url="postgresql+asyncpg://localhost/cortex",
+                kafka_bootstrap_servers="localhost:9092",
+                payload_store_path=str(tmp_path / "payloads"),
+            )
+        )
+    except ValueError as error:
+        assert "CORTEX_SECRET_ENCRYPTION_KEY" in str(error)
+    else:
+        raise AssertionError("SQL Slack connector should require encryption key")
+
+
 def test_slack_source_selection_route() -> None:
     app = client()
     start = app.post("/connectors/slack/oauth/start", json={"workspace_id": "ws_1"})

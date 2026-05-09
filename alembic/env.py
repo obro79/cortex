@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from cortex.config import Settings
 from cortex.db import models  # noqa: F401
 from cortex.db.base import Base
+from cortex.db.session import normalize_asyncpg_url
 
 config = context.config
 if config.config_file_name is not None:
@@ -17,7 +18,7 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    return Settings().database_url
+    return normalize_asyncpg_url(Settings().database_url)
 
 
 def run_migrations_offline() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from cortex.contracts.entities import BackfillJob
 from cortex.ingestion.raw_events import RawEventIdempotencyConflict, RawEventInput
@@ -12,16 +12,10 @@ from cortex.platform.rate_limits import (
     RateLimitService,
     RateLimitSubject,
 )
+from cortex.utils.asyncio import maybe_await
 
 from .client import SlackPermanentError, SlackRateLimitError, SlackWebClient
 from .mapping import derived_raw_events_for_message
-from .repositories import (
-    InMemoryBackfillJobRepository,
-    InMemoryOAuthInstallationRepository,
-    InMemoryProviderCursorRepository,
-    InMemorySecretRefRepository,
-    InMemorySourceConnectionRepository,
-)
 
 
 @dataclass(frozen=True)
@@ -42,11 +36,11 @@ class SlackBackfillService:
         self,
         *,
         client: SlackWebClient,
-        source_connections: InMemorySourceConnectionRepository,
-        installations: InMemoryOAuthInstallationRepository,
-        secrets: InMemorySecretRefRepository,
-        cursors: InMemoryProviderCursorRepository,
-        backfills: InMemoryBackfillJobRepository,
+        source_connections: Any,
+        installations: Any,
+        secrets: Any,
+        cursors: Any,
+        backfills: Any,
         ingestion: SlackBackfillIngestionService,
         provider_rate_limiter: RateLimitService | None = None,
         provider_rate_limit_policy: RateLimitPolicy | None = None,
@@ -64,20 +58,30 @@ class SlackBackfillService:
     async def backfill_source(
         self, *, workspace_id: str, source_connection_id: str
     ) -> SlackBackfillResult:
-        source = self.source_connections.get_by_id(source_connection_id)
-        job = self.backfills.create(
-            workspace_id=workspace_id, source_connection_id=source_connection_id
+        source = await maybe_await(
+            self.source_connections.get_by_id(source_connection_id)
         )
-        self.backfills.mark_running(job.id)
-        cursor = self.cursors.get_for_source(
-            workspace_id=workspace_id, source_connection_id=source_connection_id
+        job = await maybe_await(
+            self.backfills.create(
+                workspace_id=workspace_id, source_connection_id=source_connection_id
+            )
+        )
+        await maybe_await(self.backfills.mark_running(job.id))
+        cursor = await maybe_await(
+            self.cursors.get_for_source(
+                workspace_id=workspace_id, source_connection_id=source_connection_id
+            )
         )
         raw_events_created = 0
         duplicates = 0
         latest_ts: str | None = cursor.cursor_value if cursor else None
         page_cursor: str | None = None
-        installation = self.installations.get_by_id(source.oauth_installation_id)
-        access_token = self.secrets.get_token(installation.secret_ref_id)
+        installation = await maybe_await(
+            self.installations.get_by_id(source.oauth_installation_id)
+        )
+        access_token = await maybe_await(
+            self.secrets.get_token(installation.secret_ref_id)
+        )
         try:
             while True:
                 self._enforce_provider_limit(
@@ -100,10 +104,12 @@ class SlackBackfillService:
                     raw_events_created += created
                     duplicates += duplicate
                     latest_ts = str(message.get("ts") or latest_ts or "")
-                    cursor = self.cursors.advance_after_persist(
-                        workspace_id=workspace_id,
-                        source_connection_id=source_connection_id,
-                        event_ts=latest_ts,
+                    cursor = await maybe_await(
+                        self.cursors.advance_after_persist(
+                            workspace_id=workspace_id,
+                            source_connection_id=source_connection_id,
+                            event_ts=latest_ts,
+                        )
                     )
                     if message.get("reply_count"):
                         self._enforce_provider_limit(
@@ -125,35 +131,43 @@ class SlackBackfillService:
                             raw_events_created += created
                             duplicates += duplicate
                             latest_ts = str(reply.get("ts") or latest_ts or "")
-                            cursor = self.cursors.advance_after_persist(
-                                workspace_id=workspace_id,
-                                source_connection_id=source_connection_id,
-                                event_ts=latest_ts,
+                            cursor = await maybe_await(
+                                self.cursors.advance_after_persist(
+                                    workspace_id=workspace_id,
+                                    source_connection_id=source_connection_id,
+                                    event_ts=latest_ts,
+                                )
                             )
                 if not page.next_cursor:
                     break
                 page_cursor = page.next_cursor
         except SlackRateLimitError:
-            job = self.backfills.mark_retrying(job.id, error_code="rate_limited")
+            job = await maybe_await(
+                self.backfills.mark_retrying(job.id, error_code="rate_limited")
+            )
             return SlackBackfillResult(
                 False, job, raw_events_created, duplicates, latest_ts
             )
         except RateLimitExceededError:
-            job = self.backfills.mark_retrying(job.id, error_code="rate_limited")
+            job = await maybe_await(
+                self.backfills.mark_retrying(job.id, error_code="rate_limited")
+            )
             return SlackBackfillResult(
                 False, job, raw_events_created, duplicates, latest_ts
             )
         except (SlackPermanentError, RawEventIdempotencyConflict):
-            job = self.backfills.mark_deadlettered(
-                job.id, error_code="permanent_failure"
+            job = await maybe_await(
+                self.backfills.mark_deadlettered(job.id, error_code="permanent_failure")
             )
             return SlackBackfillResult(
                 False, job, raw_events_created, duplicates, latest_ts
             )
 
-        job = self.backfills.mark_completed(
-            job.id,
-            cursor_id=cursor.id if cursor else None,
+        job = await maybe_await(
+            self.backfills.mark_completed(
+                job.id,
+                cursor_id=cursor.id if cursor else None,
+            )
         )
         return SlackBackfillResult(True, job, raw_events_created, duplicates, latest_ts)
 
@@ -176,7 +190,9 @@ class SlackBackfillService:
         source_connection_id: str,
         message: dict[str, object],
     ) -> tuple[int, int]:
-        source = self.source_connections.get_by_id(source_connection_id)
+        source = await maybe_await(
+            self.source_connections.get_by_id(source_connection_id)
+        )
         created_count = 0
         duplicate_count = 0
         for raw_event in derived_raw_events_for_message(

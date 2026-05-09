@@ -66,7 +66,7 @@ async def test_backfill_persists_messages_threads_files_links_and_cursor() -> No
     complete = await services.oauth.complete_install(
         code="code_123", state=str(start["state"])
     )
-    selected = services.sources.select_channels(
+    selected = await services.sources.select_channels(
         workspace_id="ws_1",
         oauth_installation_id=complete["installation"]["id"],
         channels=[{"id": "C123", "name": "private-roadmap"}],
@@ -96,7 +96,7 @@ async def test_backfill_resume_counts_duplicates_without_rewriting_payloads() ->
     complete = await services.oauth.complete_install(
         code="code_123", state=str(start["state"])
     )
-    selected = services.sources.select_channels(
+    selected = await services.sources.select_channels(
         workspace_id="ws_1",
         oauth_installation_id=complete["installation"]["id"],
         channels=[{"id": "C123"}],

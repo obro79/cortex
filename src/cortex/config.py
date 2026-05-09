@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    cortex_secret_encryption_key: str = Field(
+        default="", alias="CORTEX_SECRET_ENCRYPTION_KEY"
+    )
+    cortex_secret_encryption_key_version: str = Field(
+        default="local-v1", alias="CORTEX_SECRET_ENCRYPTION_KEY_VERSION"
+    )
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
     kafka_consumer_group: str = Field(

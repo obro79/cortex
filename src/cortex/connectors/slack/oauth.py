@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from secrets import token_urlsafe
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from cortex.contracts.enums import OAuthInstallationStatus
+from cortex.utils.asyncio import maybe_await
 
 from .client import SlackHttpClient, SlackOAuthError
-from .repositories import (
-    InMemoryOAuthInstallationRepository,
-    InMemorySecretRefRepository,
-)
 
 REQUIRED_SLACK_SCOPES = frozenset(
     {
@@ -102,8 +99,8 @@ class SlackOAuthService:
     def __init__(
         self,
         *,
-        secrets: InMemorySecretRefRepository,
-        installations: InMemoryOAuthInstallationRepository,
+        secrets: Any,
+        installations: Any,
         client: SlackOAuthClient | None = None,
         client_id: str = "",
         redirect_uri: str = "",
@@ -138,27 +135,31 @@ class SlackOAuthService:
         except SlackOAuthError as exc:
             return {"ok": False, "error": "oauth_exchange_failed", "reason": str(exc)}
         missing = sorted(REQUIRED_SLACK_SCOPES - token.scopes)
-        secret_ref = self.secrets.create_for_token(
-            workspace_id=workspace_id,
-            provider="slack",
-            token=token.access_token,
+        secret_ref = await maybe_await(
+            self.secrets.create_for_token(
+                workspace_id=workspace_id,
+                provider="slack",
+                token=token.access_token,
+            )
         )
         status = (
             OAuthInstallationStatus.NEEDS_REAUTH
             if missing
             else OAuthInstallationStatus.ACTIVE
         )
-        install = self.installations.upsert_active(
-            workspace_id=workspace_id,
-            provider_workspace_id=token.team_id,
-            secret_ref_id=secret_ref.id,
-            scopes=token.scopes,
-            status=status,
-            health_json={"missing_scopes": missing, "ok": not missing},
-            enterprise_id=token.enterprise_id,
-            bot_user_id=token.bot_user_id,
-            installing_actor_id=actor_id,
-            provider_metadata_json={"team_id": token.team_id},
+        install = await maybe_await(
+            self.installations.upsert_active(
+                workspace_id=workspace_id,
+                provider_workspace_id=token.team_id,
+                secret_ref_id=secret_ref.id,
+                scopes=token.scopes,
+                status=status,
+                health_json={"missing_scopes": missing, "ok": not missing},
+                enterprise_id=token.enterprise_id,
+                bot_user_id=token.bot_user_id,
+                installing_actor_id=actor_id,
+                provider_metadata_json={"team_id": token.team_id},
+            )
         )
         return {
             "ok": not missing,

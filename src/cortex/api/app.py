@@ -80,10 +80,12 @@ def create_app(
     event_bus: EventBus | None = None
     payload_store: PayloadStore | None = None
     ingestion_service: Any | None = None
+    session_factory = None
     auto_drain_pipeline = True
     if resolved.cortex_event_bus == "kafka":
         if resolved.cortex_state_backend != "sql":
             raise ValueError("CORTEX_EVENT_BUS=kafka requires CORTEX_STATE_BACKEND=sql")
+        session_factory = create_sessionmaker(resolved.database_url)
         event_bus = KafkaEventBus(
             bootstrap_servers=resolved.kafka_bootstrap_servers,
         )
@@ -91,7 +93,7 @@ def create_app(
             resolved.payload_store_path or "/var/lib/cortex/payloads"
         )
         ingestion_service = SessionRawEventIngestionService(
-            session_factory=create_sessionmaker(resolved.database_url),
+            session_factory=session_factory,
             payload_store=payload_store,
             event_bus=event_bus,
         )
@@ -108,6 +110,10 @@ def create_app(
             auto_drain_pipeline=auto_drain_pipeline,
             provider_rate_limiter=provider_rate_limiter,
             provider_rate_limit_policy=provider_rate_limit_policy,
+            settings=resolved,
+            session_factory=(
+                session_factory if resolved.cortex_state_backend == "sql" else None
+            ),
         )
         app.include_router(slack_router)
     if resolved.cortex_linear_connector_enabled:
@@ -161,4 +167,10 @@ def create_app(
     return app
 
 
-app = create_app()
+app = create_app(
+    Settings.model_construct(
+        cortex_event_bus="memory",
+        cortex_state_backend="memory",
+        cortex_slack_connector_enabled=False,
+    )
+)

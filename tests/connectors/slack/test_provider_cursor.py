@@ -1,6 +1,7 @@
 from cortex.connectors.slack.client import SlackPermanentError, SlackRateLimitError
 from cortex.connectors.slack.service import create_slack_connector_services
 from cortex.contracts.enums import BackfillJobStatus
+from cortex.utils.asyncio import maybe_await
 
 
 class RateLimitedClient:
@@ -24,7 +25,7 @@ async def selected_source_id(services) -> str:
     complete = await services.oauth.complete_install(
         code="code_123", state=str(start["state"])
     )
-    selected = services.sources.select_channels(
+    selected = await services.sources.select_channels(
         workspace_id="ws_1",
         oauth_installation_id=complete["installation"]["id"],
         channels=[{"id": "C123"}],
@@ -44,8 +45,10 @@ async def test_rate_limit_marks_backfill_retrying_without_cursor_advance() -> No
     assert result.job.status == BackfillJobStatus.RETRYING
     assert result.cursor_value is None
     assert (
-        services.cursors.get_for_source(
-            workspace_id="ws_1", source_connection_id=source_id
+        await maybe_await(
+            services.cursors.get_for_source(
+                workspace_id="ws_1", source_connection_id=source_id
+            )
         )
         is None
     )
