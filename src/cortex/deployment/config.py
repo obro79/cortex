@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from cortex.config import Settings
+from cortex.platform.feature_flags import validate_feature_flags
 
 RuntimeRole = Literal["api", "worker-noop", "worker-pipeline", "migrate"]
 
@@ -19,6 +20,14 @@ def validate_runtime_config(
     settings: Settings, *, role: RuntimeRole
 ) -> list[RuntimeConfigIssue]:
     issues: list[RuntimeConfigIssue] = []
+    for violation in validate_feature_flags(settings):
+        issues.append(
+            RuntimeConfigIssue(
+                field=violation,
+                code="unsafe_production_feature_flag",
+                message=f"{violation} is not allowed in production",
+            )
+        )
     if role in {"api", "worker-pipeline", "migrate"}:
         _require(settings.database_url, "database_url", "DATABASE_URL", issues)
     if role == "worker-pipeline" or settings.cortex_event_bus == "kafka":
@@ -39,7 +48,7 @@ def validate_runtime_config(
     if settings.cortex_state_backend == "sql":
         _require(settings.database_url, "database_url", "DATABASE_URL", issues)
     if role == "worker-noop":
-        return []
+        return issues
     if role == "api" and settings.cortex_event_bus == "memory":
         return issues
     return issues

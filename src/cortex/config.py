@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     cortex_repo_docs_connector_enabled: bool = Field(
         default=False, alias="CORTEX_REPO_DOCS_CONNECTOR_ENABLED"
     )
+    cortex_context_gate_blocking_enabled: bool = Field(
+        default=False, alias="CORTEX_CONTEXT_GATE_BLOCKING_ENABLED"
+    )
+    cortex_embedding_mode: Literal["deterministic", "real"] = Field(
+        default="deterministic", alias="CORTEX_EMBEDDING_MODE"
+    )
     cortex_event_bus: Literal["memory", "kafka"] = Field(
         default="memory", alias="CORTEX_EVENT_BUS"
     )

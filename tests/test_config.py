@@ -5,6 +5,8 @@ def test_settings_defaults_load_without_services() -> None:
     settings = Settings()
     assert settings.cortex_env == "local"
     assert settings.cortex_cache_backend == "memory"
+    assert settings.cortex_embedding_mode == "deterministic"
+    assert settings.cortex_context_gate_blocking_enabled is False
     assert settings.database_url == ""
 
 

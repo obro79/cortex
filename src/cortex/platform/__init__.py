@@ -9,6 +9,11 @@ from cortex.platform.cache import (
     RedisEphemeralCache,
 )
 from cortex.platform.factory import build_ephemeral_cache
+from cortex.platform.feature_flags import (
+    FeatureFlags,
+    feature_flags_from_settings,
+    validate_feature_flags,
+)
 from cortex.platform.rate_limits import (
     RateLimitDecision,
     RateLimitExceededError,
@@ -30,6 +35,7 @@ __all__ = [
     "CacheCounterError",
     "CacheUnavailableError",
     "EphemeralCacheService",
+    "FeatureFlags",
     "InMemoryEphemeralCache",
     "RedisCacheClient",
     "RedisEphemeralCache",
@@ -46,4 +52,6 @@ __all__ = [
     "SingletonJobRunner",
     "SqlAlchemySchedulerLeaseRepository",
     "build_ephemeral_cache",
+    "feature_flags_from_settings",
+    "validate_feature_flags",
 ]
