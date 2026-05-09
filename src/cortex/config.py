@@ -91,6 +91,7 @@ class Settings(BaseSettings):
         default="", alias="GITHUB_INSTALLATION_TOKEN"
     )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
     kafka_consumer_group: str = Field(

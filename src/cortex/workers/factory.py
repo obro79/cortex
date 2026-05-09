@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -11,7 +12,11 @@ from cortex.chunking.service import ChunkingService
 from cortex.chunking.source_aware import SourceAwareChunker
 from cortex.config import Settings
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
+from cortex.embeddings.deterministic import (
+    DeterministicEmbeddingProvider,
+    EmbeddingProvider,
+)
+from cortex.embeddings.gemini import GeminiEmbeddingProvider
 from cortex.embeddings.publishers import EmbeddingPublisher
 from cortex.embeddings.repositories import SqlAlchemyEmbeddingRecordRepository
 from cortex.embeddings.service import EmbeddingService
@@ -115,10 +120,7 @@ class SqlPipelineDispatcher:
         embedding_service = EmbeddingService(
             source_chunks=source_chunks,
             embeddings=SqlAlchemyEmbeddingRecordRepository(session),
-            provider=DeterministicEmbeddingProvider(
-                dimensions=16,
-                version=self.retrieval_config.embeddings.version,
-            ),
+            provider=self._embedding_provider(),
             publisher=EmbeddingPublisher(event_bus),
             model_rate_limiter=(
                 RateLimitService(self.cache)
@@ -151,6 +153,23 @@ class SqlPipelineDispatcher:
         elif envelope.event_type == "embedding.requested":
             return await embeddings.handle_embedding_requested(envelope)
         return None
+
+    def _embedding_provider(self) -> EmbeddingProvider:
+        embeddings = self.retrieval_config.embeddings
+        if self.settings.cortex_embedding_mode == "real":
+            return cast(
+                EmbeddingProvider,
+                GeminiEmbeddingProvider(
+                    api_key=self.settings.gemini_api_key,
+                    model=embeddings.prod_model,
+                    dimensions=embeddings.prod_dimensions,
+                    version=embeddings.version,
+                ),
+            )
+        return DeterministicEmbeddingProvider(
+            dimensions=16,
+            version=embeddings.version,
+        )
 
 
 def _result_status(result: object | None) -> str | None:

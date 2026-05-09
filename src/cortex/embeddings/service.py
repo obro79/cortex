@@ -10,7 +10,7 @@ from cortex.platform.rate_limits import (
 )
 from cortex.utils.asyncio import maybe_await
 
-from .deterministic import DeterministicEmbeddingProvider
+from .deterministic import EmbeddingProvider
 from .publishers import EmbeddingPublisher
 from .repositories import EmbeddingUpsertResult
 
@@ -21,9 +21,8 @@ class EmbeddingService:
         *,
         source_chunks: Any,
         embeddings: Any,
-        provider: DeterministicEmbeddingProvider,
+        provider: EmbeddingProvider,
         publisher: EmbeddingPublisher,
-        model: str = "fixture-vector-v1",
         model_rate_limiter: RateLimitService | None = None,
         model_rate_limit_policy: RateLimitPolicy | None = None,
     ) -> None:
@@ -31,7 +30,6 @@ class EmbeddingService:
         self.embeddings = embeddings
         self.provider = provider
         self.publisher = publisher
-        self.model = model
         self.model_rate_limiter = model_rate_limiter
         self.model_rate_limit_policy = model_rate_limit_policy
 
@@ -43,8 +41,8 @@ class EmbeddingService:
                 self.embeddings.queue_for_chunk(
                     workspace_id=chunk.workspace_id,
                     source_chunk_id=chunk.id,
-                    provider="deterministic",
-                    model=self.model,
+                    provider=self.provider.provider_name,
+                    model=self.provider.model,
                     dimensions=self.provider.dimensions,
                     task_type="retrieval_document",
                     embedding_version=self.provider.version,
@@ -64,11 +62,14 @@ class EmbeddingService:
                 self.model_rate_limit_policy,
                 RateLimitSubject(
                     workspace_id=record.workspace_id,
-                    user_id=f"model:{self.model}",
+                    user_id=f"model:{self.provider.model}",
                     client_id="embedding-worker",
                 ),
             )
-        output = self.provider.embed(record.input_text_hash)
+        chunk = await maybe_await(self.source_chunks.get_by_id(record.source_chunk_id))
+        output = await maybe_await(
+            self.provider.embed(record.input_text_hash, chunk.text)
+        )
         completed = cast(
             EmbeddingRecord,
             await maybe_await(

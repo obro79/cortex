@@ -38,6 +38,9 @@ async def test_embedding_service_queues_completes_and_noops_same_chunk(
     completed = await service.complete(queued.record.id)
 
     assert queued.operation == "inserted"
+    assert queued.record.provider == "deterministic"
+    assert queued.record.model == "fixture-vector-v1"
+    assert queued.record.dimensions == 8
     assert noop.operation == "noop"
     assert completed.vector_hash is not None
     assert [event.event_type for event in bus.list_events()] == [
