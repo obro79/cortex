@@ -30,6 +30,11 @@ from cortex.platform.scheduler import (
     SingletonJobRunner,
     SqlAlchemySchedulerLeaseRepository,
 )
+from cortex.platform.support_ops import (
+    SupportOperation,
+    SupportOperationResult,
+    SupportOpsService,
+)
 
 __all__ = [
     "CacheCounterError",
@@ -51,6 +56,9 @@ __all__ = [
     "SchedulerLeaseRepository",
     "SingletonJobRunner",
     "SqlAlchemySchedulerLeaseRepository",
+    "SupportOperation",
+    "SupportOperationResult",
+    "SupportOpsService",
     "build_ephemeral_cache",
     "feature_flags_from_settings",
     "validate_feature_flags",
