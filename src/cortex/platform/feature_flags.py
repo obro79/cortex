@@ -15,6 +15,8 @@ class FeatureFlags:
     linear_connector_enabled: bool
     github_connector_enabled: bool
     repo_docs_connector_enabled: bool
+    ui_enabled: bool
+    internal_admin_session_enabled: bool
     context_gate_blocking_enabled: bool
     embedding_mode: EmbeddingMode
     api_rate_limit_enabled: bool
@@ -29,6 +31,8 @@ class FeatureFlags:
         violations: list[str] = []
         if self.dev_workbench_enabled:
             violations.append("dev_workbench_enabled")
+        if self.internal_admin_session_enabled:
+            violations.append("internal_admin_session_enabled")
         if self.cache_backend == "memory" and (
             self.api_rate_limit_enabled
             or self.provider_rate_limit_enabled
@@ -45,6 +49,8 @@ def feature_flags_from_settings(settings: Settings) -> FeatureFlags:
         linear_connector_enabled=settings.cortex_linear_connector_enabled,
         github_connector_enabled=settings.cortex_github_connector_enabled,
         repo_docs_connector_enabled=settings.cortex_repo_docs_connector_enabled,
+        ui_enabled=settings.cortex_ui_enabled,
+        internal_admin_session_enabled=settings.cortex_internal_admin_session_enabled,
         context_gate_blocking_enabled=settings.cortex_context_gate_blocking_enabled,
         embedding_mode=settings.cortex_embedding_mode,
         api_rate_limit_enabled=settings.cortex_api_rate_limit_enabled,

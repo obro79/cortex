@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     cortex_repo_docs_connector_enabled: bool = Field(
         default=False, alias="CORTEX_REPO_DOCS_CONNECTOR_ENABLED"
     )
+    cortex_ui_enabled: bool = Field(default=False, alias="CORTEX_UI_ENABLED")
+    cortex_internal_admin_session_enabled: bool = Field(
+        default=False, alias="CORTEX_INTERNAL_ADMIN_SESSION_ENABLED"
+    )
+    cortex_ui_session_secret: str = Field(default="", alias="CORTEX_UI_SESSION_SECRET")
     cortex_context_gate_blocking_enabled: bool = Field(
         default=False, alias="CORTEX_CONTEXT_GATE_BLOCKING_ENABLED"
     )
