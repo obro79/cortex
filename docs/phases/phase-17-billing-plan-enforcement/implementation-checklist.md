@@ -1,15 +1,15 @@
 # Phase 17 Implementation Checklist
 
-- [ ] Add billing customer/subscription models.
+- [x] Add billing customer/subscription models.
 - [ ] Add Stripe customer creation.
 - [ ] Add checkout or subscription start flow.
 - [ ] Add Stripe webhook verification and idempotency.
-- [ ] Add plan entitlement model.
-- [ ] Add usage meter model.
-- [ ] Track seats, workspaces, sources, indexed objects, retrievals, storage,
+- [x] Add plan entitlement model.
+- [x] Add usage meter model.
+- [x] Track seats, workspaces, sources, indexed objects, retrievals, storage,
       and model calls where available.
-- [ ] Enforce limits in API paths.
-- [ ] Enforce limits in worker/job paths.
+- [x] Enforce limits in API paths.
+- [x] Enforce limits in worker/job paths.
 - [ ] Add billing portal link.
 - [ ] Add trial or invite-only plan gate.
 - [ ] Add grace period and failed-payment states.
