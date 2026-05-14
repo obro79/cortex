@@ -32,10 +32,20 @@ class InvitationStatus(StrEnum):
 class MembershipRole(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"
+    SECURITY_ADMIN = "security_admin"
+    BILLING_ADMIN = "billing_admin"
     MEMBER = "member"
+    VIEWER = "viewer"
 
 
-ADMIN_ROLES = frozenset({MembershipRole.OWNER, MembershipRole.ADMIN})
+ADMIN_ROLES = frozenset(
+    {
+        MembershipRole.OWNER,
+        MembershipRole.ADMIN,
+        MembershipRole.SECURITY_ADMIN,
+        MembershipRole.BILLING_ADMIN,
+    }
+)
 
 
 @dataclass(frozen=True)

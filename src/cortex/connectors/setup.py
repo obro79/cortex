@@ -6,6 +6,7 @@ from typing import Protocol
 from cortex.security.admin_auth import AdminActor, AdminAuthorizationService
 from cortex.security.audit import InMemoryAuditLogRepository
 from cortex.security.redaction import redact_mapping
+from cortex.tenancy.rbac import Permission, RolePermissionService
 
 CONNECTOR_ACTIONS = frozenset(
     {
@@ -72,6 +73,7 @@ class ConnectorSetupService:
         self.providers = {provider.provider: provider for provider in providers}
         self.audit_log = audit_log or InMemoryAuditLogRepository()
         self.authorization = AdminAuthorizationService(self.audit_log)
+        self.permissions = RolePermissionService()
 
     def overview(
         self, *, workspace_id: str, actor: AdminActor | None
@@ -106,6 +108,15 @@ class ConnectorSetupService:
         if action not in CONNECTOR_ACTIONS:
             raise ValueError(f"unsupported connector action: {action}")
         setup_provider = self._provider(provider)
+        permission = (
+            Permission.SOURCE_SELECT
+            if action == "source_select"
+            else Permission.CONNECTOR_SETUP
+        )
+        role_allowed = self._actor_has_permission(
+            actor=actor,
+            permission=permission,
+        )
         auth = self.authorization.require_admin(
             workspace_id=workspace_id,
             actor=actor,
@@ -118,11 +129,15 @@ class ConnectorSetupService:
                 **(metadata_json or {}),
             },
         )
+        allowed = auth.allowed and role_allowed
+        reason = auth.reason if auth.allowed else auth.reason
+        if auth.allowed and not role_allowed:
+            reason = "missing_permission"
         return ConnectorActionResult(
-            allowed=auth.allowed,
+            allowed=allowed,
             provider=setup_provider.provider,
             action=action,
-            reason=auth.reason,
+            reason=reason,
             metadata_json=redact_mapping(metadata_json or {}),
         )
 
@@ -157,6 +172,26 @@ class ConnectorSetupService:
             return self.providers[provider]
         except KeyError as error:
             raise ValueError(f"unsupported connector provider: {provider}") from error
+
+    def _actor_has_permission(
+        self, *, actor: AdminActor | None, permission: Permission
+    ) -> bool:
+        if actor is None:
+            return False
+        for role in actor.roles:
+            if role == "workspace_admin":
+                role = "admin"
+            try:
+                decision = self.permissions.decide(
+                    role=role,
+                    permission=permission,
+                    approval_granted=True,
+                )
+            except ValueError:
+                continue
+            if decision.allowed:
+                return True
+        return False
 
 
 class SourceSelectionService:

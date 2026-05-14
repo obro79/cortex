@@ -12,6 +12,11 @@ from cortex.tenancy.models import (
     UserStatus,
     Workspace,
 )
+from cortex.tenancy.rbac import (
+    Permission,
+    PermissionDecision,
+    RolePermissionService,
+)
 from cortex.tenancy.repositories import InMemoryTenantRepository, TenantRepository
 
 __all__ = [
@@ -23,6 +28,9 @@ __all__ = [
     "MembershipRole",
     "MembershipStatus",
     "Organization",
+    "Permission",
+    "PermissionDecision",
+    "RolePermissionService",
     "TenantContext",
     "TenantRepository",
     "TenantStatus",
