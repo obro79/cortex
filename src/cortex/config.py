@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     cortex_internal_admin_session_enabled: bool = Field(
         default=False, alias="CORTEX_INTERNAL_ADMIN_SESSION_ENABLED"
     )
+    cortex_auth_provider: Literal["local", "oidc", "clerk", "auth0", "supabase"] = (
+        Field(default="local", alias="CORTEX_AUTH_PROVIDER")
+    )
+    cortex_public_auth_enabled: bool = Field(
+        default=False, alias="CORTEX_PUBLIC_AUTH_ENABLED"
+    )
+    cortex_required_terms_version: str = Field(
+        default="terms-v1", alias="CORTEX_REQUIRED_TERMS_VERSION"
+    )
     cortex_ui_session_secret: str = Field(default="", alias="CORTEX_UI_SESSION_SECRET")
     cortex_context_gate_blocking_enabled: bool = Field(
         default=False, alias="CORTEX_CONTEXT_GATE_BLOCKING_ENABLED"

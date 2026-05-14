@@ -487,6 +487,202 @@ Validation:
 - UI reads real store data.
 - No static-only demo surfaces for core workflows.
 
+## Self-Serve Productization Track
+
+The shortest credible path from operator-led beta to real self-serve is:
+
+```text
+controlled beta -> invite-only self-serve -> paid self-serve -> enterprise-ready
+```
+
+Treat this as a new productization track after Phase 14, not as cleanup inside
+the existing roadmap. The first self-serve beta should target tenant model, real
+auth, workspace onboarding, Slack plus GitHub connector setup, invite-only or
+basic billing gate, customer-facing source health/evidence UI, workspace-admin
+RBAC, data deletion/export basics, deployment, and monitoring.
+
+## Phase 15: Self-Serve Product Foundation
+
+Goal: define the customer boundary and replace internal operator assumptions
+with real tenant, auth, and onboarding flows.
+
+Deliverables:
+
+- Organization, workspace, user, membership, and role models.
+- Tenant isolation rules across every table, query, API, worker, retrieval, UI,
+  and support action.
+- Migration path from current `workspace_id` assumptions.
+- Public auth provider integration for email login plus Google or GitHub SSO.
+- Invite flow.
+- Workspace creation and first-workspace setup wizard.
+- Org/workspace switching.
+- Owner, admin, and member roles.
+- Required legal consent and terms gate.
+- Session, CSRF, logout, and account deletion hooks.
+- Production-safe route protection for UI and APIs.
+- Audit trail tied to real users, not internal actor headers.
+
+Validation:
+
+- Two workspaces can use the same deployment without data crossing.
+- Every API, worker, retrieval, UI, and support action is workspace-scoped.
+- A new user can sign up, create a workspace, invite a teammate, and reach
+  connector setup without manual database edits.
+- Internal admin shortcuts are disabled by default in production.
+
+## Phase 16: Self-Serve Connector Setup
+
+Goal: turn Slack, GitHub, Linear, and docs setup into customer-admin product
+flows.
+
+Deliverables:
+
+- Slack app install flow with source selection.
+- GitHub App install flow with repo selection.
+- Linear API or OAuth setup flow.
+- Repo docs import flow.
+- Connector health and status pages.
+- Reauth and revoke flows.
+- Backfill progress and retry UI.
+- Clear "what data will Cortex read?" screens.
+
+Validation:
+
+- A non-developer customer admin can connect sources and see data start flowing.
+- Connector setup, source selection, reauth, revoke, and retry actions are
+  permissioned, audited, and workspace-scoped.
+
+## Phase 17: Billing And Plan Enforcement
+
+Goal: add a paid-product spine while keeping initial pricing simple.
+
+Deliverables:
+
+- Stripe customer and subscription integration.
+- Free trial or invite-only plan.
+- Usage dimensions for seats, workspaces, connected sources, indexed objects,
+  retrievals, storage, and model calls.
+- Plan limits enforced in APIs and workers.
+- Billing portal.
+- Grace periods and failed-payment handling.
+- Admin billing page.
+
+Validation:
+
+- Customers can subscribe, update payment, hit plan limits cleanly, and keep
+  using allowed features.
+- Over-limit behavior never causes data leakage or cross-tenant side effects.
+
+## Phase 18: Enterprise RBAC And Permission Hardening
+
+Goal: move beyond workspace-admin-only permissions without pretending provider
+ACLs are solved before they are.
+
+Deliverables:
+
+- Roles for owner, admin, security admin, billing admin, member, and viewer.
+- Fine-grained permissions for connector setup, source selection, replay,
+  reindex, canonical approvals, billing, and user management.
+- Provider-native permission snapshots where practical.
+- Per-user retrieval eligibility model, or an explicit documented limitation if
+  v1 stays source-allowlist only.
+- Admin approval gates for risky actions.
+
+Validation:
+
+- Sensitive actions are permissioned, audited, and denied safely.
+- Retrieval eligibility behavior is explicit, tested, and visible to admins.
+
+## Phase 19: Polished Customer Admin UI
+
+Goal: make the Phase 14 surfaces usable by customers, not just operators.
+
+Deliverables:
+
+- Real navigation and information architecture.
+- Source health, evidence packs, decisions, conflicts, jobs, connector setup,
+  team, billing, and settings.
+- Empty, loading, and error states.
+- Desktop-first operations UI that remains mobile-tolerant.
+- Notifications and toasts.
+- Confirmation flows for destructive or expensive actions.
+- Accessibility pass.
+- Playwright coverage.
+
+Validation:
+
+- A customer can operate Cortex without reading docs or asking us to run
+  commands.
+- Core flows have browser coverage across happy paths, denied states, and
+  recoverable failures.
+
+## Phase 20: Data Lifecycle, Compliance, And Trust
+
+Goal: satisfy serious customer security reviews with implemented controls, not
+promises.
+
+Deliverables:
+
+- Data deletion by workspace, source, and user.
+- Retention policy controls.
+- Export support.
+- Secret rotation.
+- Security review artifacts.
+- Privacy and security docs.
+- DPA/SOC2-ready control mapping, even if certification has not started.
+- Incident and runbook process.
+- Abuse and rate-limit protection.
+
+Validation:
+
+- Workspace/source/user deletion jobs complete without orphaned retrievable
+  data.
+- Security review answers map to implemented controls or explicit limitations.
+
+## Phase 21: Production Operations
+
+Goal: make Cortex boring to deploy, monitor, support, and recover.
+
+Deliverables:
+
+- Hosted environment setup.
+- CI/CD deploy pipeline.
+- Migrations strategy.
+- Backups and restore drills.
+- Alerting.
+- Error tracking.
+- Admin support console.
+- Customer support diagnostics without raw content exposure.
+- Load and cost tests.
+- Rollback plan.
+
+Validation:
+
+- Cortex can be deployed, monitored, supported, and recovered without SSH or
+  manual heroics.
+- Restore, rollback, and high-cost failure drills have recorded evidence.
+
+## Phase 22: Enterprise Readiness Gate
+
+Goal: decide whether Cortex is ready for broader paid and enterprise rollout.
+
+Deliverables:
+
+- Cross-phase launch review for tenant isolation, auth, billing, RBAC,
+  connector setup, admin UI, compliance, and operations.
+- Security review of public routes, support tools, audit logs, secrets, and
+  customer data handling.
+- Production beta launch checklist.
+- Pricing and packaging decision record.
+- Sales/support handoff docs.
+- Known limitations list for customers.
+
+Validation:
+
+- The team can explain exactly what is self-serve, what is invite-only, what is
+  enterprise-ready, and what remains manually supported.
+- Launch blockers have owners, fixes, or documented mitigations.
+
 ## First Wow Demo Build Order
 
 1. Seed production-shaped fixtures for Slack, Linear, GitHub, and docs.
