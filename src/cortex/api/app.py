@@ -27,6 +27,7 @@ from cortex.observability.tracing import init_tracing
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.security.audit import InMemoryAuditLogRepository
+from cortex.tenancy import InMemoryTenantRepository
 from cortex.ui.source_health import SourceHealthViewService
 
 
@@ -41,6 +42,8 @@ def create_app(
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    if resolved.cortex_public_auth_enabled:
+        app.state.tenant_repository = InMemoryTenantRepository()
     cache = ephemeral_cache
     if cache is None and (
         resolved.cortex_api_rate_limit_enabled

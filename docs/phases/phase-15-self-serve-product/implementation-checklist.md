@@ -28,7 +28,7 @@
 ## Tenant Context And Isolation
 
 - [x] Add `TenantContext` or equivalent scoped context object.
-- [ ] Add route dependency for resolving active organization/workspace/user.
+- [x] Add route dependency for resolving active organization/workspace/user.
 - [ ] Add worker job payload contract requiring workspace scope.
 - [ ] Add retrieval scope filter before ranking and citation expansion.
 - [ ] Add UI workspace context resolver.
@@ -57,13 +57,13 @@
 - [x] Add email login support.
 - [ ] Add Google or GitHub SSO support.
 - [ ] Add session validation for UI routes.
-- [ ] Add token/session validation for API routes.
+- [x] Add token/session validation for API routes.
 - [ ] Map provider identities to local users.
 - [ ] Handle verified and unverified email states.
 - [ ] Add logout.
 - [ ] Add account deletion/deactivation hook.
 - [ ] Add CSRF protection for browser mutations.
-- [ ] Disable customer access through internal actor headers.
+- [x] Disable customer access through internal actor headers.
 - [ ] Keep internal admin shortcut behind an explicit non-production-safe flag.
 
 ## Onboarding
@@ -92,7 +92,7 @@
 ## Closeout
 
 - [x] Add unit tests for tenant repositories and membership resolution.
-- [ ] Add API tests for authorized, unauthorized, and cross-workspace access.
+- [x] Add API tests for authorized, unauthorized, and cross-workspace access.
 - [ ] Add worker tests for workspace-scoped jobs.
 - [ ] Add retrieval isolation tests.
 - [ ] Add onboarding browser tests.
