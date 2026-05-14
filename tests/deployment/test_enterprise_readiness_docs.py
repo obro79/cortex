@@ -16,11 +16,12 @@ def test_launch_checklist_declares_beta_status_and_blockers() -> None:
 
 def test_known_limitations_do_not_overclaim_enterprise_readiness() -> None:
     text = (PHASE / "known-limitations.md").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
 
     assert "not yet ready for unattended enterprise self-serve rollout" in text
-    assert "full provider ACL parity is" in text
+    assert "full provider ACL parity" in normalized
     assert "not claimed" in text
-    assert "Production API/worker queueing and drill" in text
+    assert "Staging deletion/export drill evidence is not complete" in normalized
 
 
 def test_sales_handoff_excludes_sensitive_support_intake() -> None:
@@ -62,3 +63,13 @@ def test_operations_evidence_log_tracks_unproven_staging_drills() -> None:
     assert "Rollback Drill" in text
     assert "Load Drill" in text
     assert "Cost Drill" in text
+
+
+def test_public_route_rbac_audit_tracks_dev_route_guard() -> None:
+    text = Path("docs/security/public-route-rbac-audit.md").read_text(encoding="utf-8")
+
+    assert "Public By Design" in text
+    assert "Tenant And Permission Gated" in text
+    assert "CORTEX_DEV_WORKBENCH_ENABLED=true" in text
+    assert "local" in text
+    assert "test" in text

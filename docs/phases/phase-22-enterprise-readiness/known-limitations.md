@@ -11,18 +11,21 @@ Cortex is suitable for invite-only beta workspaces with guided setup. It is not 
   enforcement for source listing, source selection, and backfill. Customer-facing
   setup UI is still incomplete.
 - Billing has local and SQL-backed plan enforcement plus Stripe checkout, portal,
-  and webhook verification boundaries. Production Stripe credentials, live
-  checkout/portal smoke evidence, and customer plan-management routes are not
+  customer-facing API routes, and webhook verification boundaries. Production
+  Stripe credentials and live checkout/portal/webhook smoke evidence are not
   complete.
-- RBAC is enforced on hardened connector admin routes, but remaining public
-  admin actions still need a route-by-route audit.
+- RBAC is enforced on connector, billing, and lifecycle admin routes. Dev routes
+  remain feature-flagged and public when explicitly enabled, so they must stay
+  disabled outside local/test environments.
 - Retrieval permission behavior now supports provider-native ACL snapshots for
-  Slack, GitHub, and Linear protected chunks. Snapshot ingestion from live
-  providers and freshness drills are not complete, so full provider ACL parity is
-  not claimed.
+  Slack, GitHub, and Linear protected chunks. Snapshot ingestion collectors,
+  hashed user-principal mapping, and freshness reporting exist, but scheduled
+  production ingestion and staging freshness drills are not complete, so full
+  provider ACL parity is not claimed.
 - Data export and deletion have lifecycle job models, SQL persistence tables,
-  and repository-backed executor foundations with fail-closed cleanup validation.
-  Production API/worker queueing and drill evidence are not complete.
+  API request/status/lease/execute/retry routes, a SQL worker role, and
+  repository-backed executors with fail-closed cleanup validation. Staging
+  deletion/export drill evidence is not complete.
 - Production operations have runbooks, but staging drill evidence is still
   required before broad launch.
 

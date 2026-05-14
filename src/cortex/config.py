@@ -105,6 +105,12 @@ class Settings(BaseSettings):
         default="", alias="GITHUB_INSTALLATION_TOKEN"
     )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
+    stripe_api_key: str = Field(default="", alias="STRIPE_API_KEY")
+    stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
+    stripe_price_id: str = Field(default="", alias="STRIPE_PRICE_ID")
+    stripe_success_url: str = Field(default="", alias="STRIPE_SUCCESS_URL")
+    stripe_cancel_url: str = Field(default="", alias="STRIPE_CANCEL_URL")
+    stripe_portal_return_url: str = Field(default="", alias="STRIPE_PORTAL_RETURN_URL")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     cortex_secret_encryption_key: str = Field(
         default="", alias="CORTEX_SECRET_ENCRYPTION_KEY"
@@ -120,6 +126,7 @@ class Settings(BaseSettings):
     payload_store_path: str = Field(default="", alias="PAYLOAD_STORE_PATH")
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
+    qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
     redis_url: str = Field(default="", alias="REDIS_URL")
     otel_exporter_otlp_endpoint: str = Field(
         default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT"

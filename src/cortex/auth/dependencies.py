@@ -11,6 +11,11 @@ from cortex.billing import (
     UsageDimension,
 )
 from cortex.config import Settings
+from cortex.permissions import (
+    InMemoryProviderPrincipalMappingRepository,
+    ProviderAclPrincipal,
+    SqlAlchemyProviderPrincipalMappingRepository,
+)
 from cortex.tenancy import InMemoryTenantRepository, TenantContext, TenantRepository
 from cortex.tenancy.rbac import Permission, RolePermissionService
 from cortex.ui.auth import (
@@ -27,7 +32,7 @@ SESSION_ID_HEADER = "x-cortex-public-session-id"
 _PERMISSIONS = RolePermissionService()
 
 
-def require_tenant_context(request: Request) -> TenantContext:
+async def require_tenant_context(request: Request) -> TenantContext:
     settings = _settings(request)
     if not settings.cortex_public_auth_enabled:
         raise HTTPException(
@@ -48,18 +53,22 @@ def require_tenant_context(request: Request) -> TenantContext:
         display_name=display_name,
     )
     repository = _tenant_repository(request)
-    user = repository.upsert_user(
-        auth_provider=identity.provider,
-        auth_subject=identity.subject,
-        email=identity.email,
-        display_name=identity.display_name,
-        email_verified_at=identity.email_verified_at,
+    user = await maybe_await(
+        repository.upsert_user(
+            auth_provider=identity.provider,
+            auth_subject=identity.subject,
+            email=identity.email,
+            display_name=identity.display_name,
+            email_verified_at=identity.email_verified_at,
+        )
     )
-    context = repository.resolve_context(
-        user_id=user.id,
-        workspace_id=workspace_id,
-        session_id=session_id,
-        trace_id=trace_id,
+    context = await maybe_await(
+        repository.resolve_context(
+            user_id=user.id,
+            workspace_id=workspace_id,
+            session_id=session_id,
+            trace_id=trace_id,
+        )
     )
     if context is None:
         raise HTTPException(
@@ -127,6 +136,31 @@ async def enforce_plan_limit(
                 "limit": decision.limit,
             },
         )
+
+
+async def resolve_provider_principals(
+    request: Request,
+    context: TenantContext,
+) -> list[ProviderAclPrincipal]:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is not None:
+        async with session_factory() as session:
+            sql_repository = SqlAlchemyProviderPrincipalMappingRepository(session)
+            return await sql_repository.active_principals(
+                workspace_id=context.workspace_id,
+                user_id=context.user_id,
+            )
+    repository = getattr(
+        request.app.state,
+        "provider_principal_mapping_repository",
+        None,
+    )
+    if isinstance(repository, InMemoryProviderPrincipalMappingRepository):
+        return repository.active_principals(
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
+    return []
 
 
 def _settings(request: Request) -> Settings:

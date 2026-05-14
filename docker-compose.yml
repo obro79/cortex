@@ -55,6 +55,26 @@ services:
     volumes:
       - payload-data:/var/lib/cortex/payloads
 
+  worker-lifecycle:
+    build:
+      context: .
+      target: worker
+    command: cortex-worker --role lifecycle
+    profiles: ["lifecycle"]
+    env_file: .env.example
+    environment:
+      CORTEX_STATE_BACKEND: sql
+      DATABASE_URL: postgresql+asyncpg://cortex:cortex@postgres:5432/cortex
+      PAYLOAD_STORE_PATH: /var/lib/cortex/payloads
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    volumes:
+      - payload-data:/var/lib/cortex/payloads
+
   migrate:
     build:
       context: .

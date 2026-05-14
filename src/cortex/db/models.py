@@ -1000,6 +1000,57 @@ class ProviderAclEntryRecord(Base):
     )
 
 
+class ProviderPrincipalMappingRecord(Base):
+    __tablename__ = "provider_principal_mappings"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            "provider",
+            "principal_type",
+            "principal_id_hash",
+            name="uq_provider_principal_mapping",
+        ),
+        Index(
+            "ix_provider_principal_mappings_user",
+            "workspace_id",
+            "user_id",
+            "status",
+            "expires_at",
+        ),
+        Index(
+            "ix_provider_principal_mappings_principal",
+            "workspace_id",
+            "provider",
+            "principal_type",
+            "principal_id_hash",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    principal_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    principal_id_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    match_method: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class CanonicalDecisionRecord(Base):
     __tablename__ = "canonical_decisions"
     __table_args__ = (

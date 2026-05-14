@@ -29,6 +29,20 @@ async def test_pipeline_worker_requires_sql_state_backend() -> None:
         raise AssertionError("pipeline worker should reject memory state backend")
 
 
+async def test_lifecycle_worker_requires_sql_state_backend() -> None:
+    settings = Settings(
+        cortex_state_backend="memory",
+        database_url="postgresql+asyncpg://localhost/cortex",
+    )
+
+    try:
+        await run_worker("lifecycle", settings)
+    except Exception as error:
+        assert "CORTEX_STATE_BACKEND=sql" in str(error)
+    else:
+        raise AssertionError("lifecycle worker should reject memory state backend")
+
+
 async def test_pipeline_worker_runs_consumer_loop(monkeypatch) -> None:
     calls: list[object] = []
 
@@ -75,3 +89,43 @@ async def test_pipeline_worker_runs_consumer_loop(monkeypatch) -> None:
     assert calls[1] == ("sessionmaker", "postgresql+asyncpg://localhost/cortex")
     assert calls[2][0] == "consumer"
     assert calls[3][0] == "run_forever"
+
+
+async def test_lifecycle_worker_processes_queue_once(monkeypatch) -> None:
+    calls: list[object] = []
+
+    def fake_create_sessionmaker(database_url: str) -> object:
+        calls.append(("sessionmaker", database_url))
+        return object()
+
+    async def fake_process_lifecycle_queue_once(
+        *,
+        settings: Settings,
+        session_factory: object,
+        worker_id: str,
+    ) -> object:
+        calls.append(("lifecycle", settings.database_url, session_factory, worker_id))
+        return object()
+
+    monkeypatch.setattr(
+        "cortex.workers.main.create_sessionmaker",
+        fake_create_sessionmaker,
+    )
+    monkeypatch.setattr(
+        "cortex.workers.main.process_lifecycle_queue_once",
+        fake_process_lifecycle_queue_once,
+    )
+
+    result = await run_worker(
+        "lifecycle",
+        Settings(
+            cortex_state_backend="sql",
+            database_url="postgresql+asyncpg://localhost/cortex",
+        ),
+        instance_id="lifecycle_1",
+    )
+
+    assert result == 0
+    assert calls[0] == ("sessionmaker", "postgresql+asyncpg://localhost/cortex")
+    assert calls[1][0] == "lifecycle"
+    assert calls[1][3] == "lifecycle_1"

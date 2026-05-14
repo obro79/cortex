@@ -4,6 +4,8 @@ from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+import httpx
+
 from cortex.contracts.entities import (
     EmbeddingRecord,
     IndexJob,
@@ -25,7 +27,9 @@ from cortex.utils.asyncio import maybe_await
 
 
 class LifecycleVectorDeleter(Protocol):
-    def delete_point(self, collection: str, point_id: str) -> bool: ...
+    def delete_point(
+        self, collection: str, point_id: str
+    ) -> bool | Awaitable[bool]: ...
 
 
 class ExportableRecord(Protocol):
@@ -188,6 +192,26 @@ class InMemoryVectorLifecycleDeleter:
 
 
 @dataclass(frozen=True)
+class QdrantLifecycleDeleter:
+    base_url: str
+    api_key: str | None = None
+    timeout_seconds: float = 10.0
+
+    async def delete_point(self, collection: str, point_id: str) -> bool:
+        headers = {"api-key": self.api_key} if self.api_key else None
+        async with httpx.AsyncClient(
+            base_url=self.base_url.rstrip("/"),
+            headers=headers,
+            timeout=self.timeout_seconds,
+        ) as client:
+            response = await client.post(
+                f"/collections/{collection}/points/delete",
+                json={"points": [point_id]},
+            )
+        return 200 <= response.status_code < 300
+
+
+@dataclass(frozen=True)
 class LifecycleRecordSelection:
     raw_events: list[RawEvent]
     source_objects: list[SourceObject]
@@ -260,7 +284,9 @@ class RepositoryLifecycleDeletionExecutor:
         vector_deleted = 0
         if self.vector_deleter is not None:
             for collection, point_id in vector_points:
-                if self.vector_deleter.delete_point(collection, point_id):
+                if await maybe_await(
+                    self.vector_deleter.delete_point(collection, point_id)
+                ):
                     vector_deleted += 1
 
         payload_deleted = 0

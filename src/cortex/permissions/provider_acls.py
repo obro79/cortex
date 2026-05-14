@@ -7,7 +7,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import SourceChunk
-from cortex.db.models import ProviderAclEntryRecord, ProviderAclSnapshotRecord
+from cortex.db.models import (
+    ProviderAclEntryRecord,
+    ProviderAclSnapshotRecord,
+    ProviderPrincipalMappingRecord,
+)
 from cortex.ingestion.payloads import sha256_digest
 from cortex.permissions.scopes import scope_external_id_hash
 
@@ -67,6 +71,19 @@ class ProviderAclDecision:
     snapshot_id: str | None = None
 
 
+@dataclass(frozen=True)
+class ProviderPrincipalMapping:
+    id: str
+    workspace_id: str
+    user_id: str
+    principal: ProviderAclPrincipal
+    match_method: str
+    status: str
+    last_verified_at: datetime
+    expires_at: datetime
+    metadata_json: dict[str, object] | None = None
+
+
 def provider_acl_id_hash(*, provider: str, acl_type: str, external_id: str) -> str:
     normalized = f"{provider}:{acl_type}:{external_id}".lower()
     return sha256_digest(normalized.encode())
@@ -117,38 +134,13 @@ class InMemoryProviderAclRepository:
         principals: list[ProviderAclPrincipal],
         now: datetime | None = None,
     ) -> ProviderAclDecision:
-        snapshot = self.current_snapshot(workspace_id=workspace_id, resource=resource)
-        if snapshot is None:
-            return ProviderAclDecision(False, "provider_acl_missing_snapshot")
-        current = now or datetime.now(UTC)
-        if snapshot.expires_at <= current:
-            return ProviderAclDecision(
-                False,
-                "provider_acl_stale",
-                snapshot_id=snapshot.id,
-            )
-        principal_keys = {
-            (principal.provider, principal.principal_type, principal.external_id_hash)
-            for principal in principals
-        }
-        for entry in snapshot.entries:
-            if entry.effect != "allow" or entry.permission != "read":
-                continue
-            key = (
-                entry.principal.provider,
-                entry.principal.principal_type,
-                entry.principal.external_id_hash,
-            )
-            if key in principal_keys:
-                return ProviderAclDecision(
-                    True,
-                    "provider_acl",
-                    snapshot_id=snapshot.id,
-                )
-        return ProviderAclDecision(
-            False,
-            "provider_acl_denied",
-            snapshot_id=snapshot.id,
+        return _authorize_snapshot(
+            snapshot=self.current_snapshot(
+                workspace_id=workspace_id,
+                resource=resource,
+            ),
+            principals=principals,
+            now=now,
         )
 
 
@@ -274,6 +266,180 @@ class SqlAlchemyProviderAclRepository:
             metadata_json=dict(record.metadata_json),
         )
 
+    async def authorize(
+        self,
+        *,
+        workspace_id: str,
+        resource: ProviderAclResourceRef,
+        principals: list[ProviderAclPrincipal],
+        now: datetime | None = None,
+    ) -> ProviderAclDecision:
+        return _authorize_snapshot(
+            snapshot=await self.current_snapshot(
+                workspace_id=workspace_id,
+                resource=resource,
+            ),
+            principals=principals,
+            now=now,
+        )
+
+
+class InMemoryProviderPrincipalMappingRepository:
+    def __init__(self) -> None:
+        self._mappings: dict[str, ProviderPrincipalMapping] = {}
+
+    def upsert_mapping(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        provider: str,
+        principal_type: str,
+        external_id: str,
+        match_method: str,
+        last_verified_at: datetime | None = None,
+        expires_at: datetime | None = None,
+        metadata_json: dict[str, object] | None = None,
+    ) -> ProviderPrincipalMapping:
+        verified_at = last_verified_at or datetime.now(UTC)
+        principal = ProviderAclPrincipal.from_external_id(
+            provider=provider,
+            principal_type=principal_type,
+            external_id=external_id,
+        )
+        mapping = ProviderPrincipalMapping(
+            id=_principal_mapping_id(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                principal=principal,
+            ),
+            workspace_id=workspace_id,
+            user_id=user_id,
+            principal=principal,
+            match_method=match_method,
+            status="active",
+            last_verified_at=verified_at,
+            expires_at=expires_at or verified_at + timedelta(days=7),
+            metadata_json=metadata_json or {},
+        )
+        self._mappings[mapping.id] = mapping
+        return mapping
+
+    def active_principals(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> list[ProviderAclPrincipal]:
+        current = now or datetime.now(UTC)
+        return [
+            mapping.principal
+            for mapping in self._mappings.values()
+            if mapping.workspace_id == workspace_id
+            and mapping.user_id == user_id
+            and mapping.status == "active"
+            and mapping.expires_at > current
+        ]
+
+
+class SqlAlchemyProviderPrincipalMappingRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def upsert_mapping(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        provider: str,
+        principal_type: str,
+        external_id: str,
+        match_method: str,
+        last_verified_at: datetime | None = None,
+        expires_at: datetime | None = None,
+        metadata_json: dict[str, object] | None = None,
+    ) -> ProviderPrincipalMapping:
+        verified_at = last_verified_at or datetime.now(UTC)
+        principal = ProviderAclPrincipal.from_external_id(
+            provider=provider,
+            principal_type=principal_type,
+            external_id=external_id,
+        )
+        mapping_id = _principal_mapping_id(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            principal=principal,
+        )
+        record = await self.session.get(ProviderPrincipalMappingRecord, mapping_id)
+        if record is None:
+            record = ProviderPrincipalMappingRecord(
+                id=mapping_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                provider=principal.provider,
+                principal_type=principal.principal_type,
+                principal_id_hash=principal.external_id_hash,
+                match_method=match_method,
+                status="active",
+                last_verified_at=verified_at,
+                expires_at=expires_at or verified_at + timedelta(days=7),
+                metadata_json=metadata_json or {},
+                created_at=verified_at,
+                updated_at=verified_at,
+            )
+            self.session.add(record)
+        else:
+            record.match_method = match_method
+            record.status = "active"
+            record.last_verified_at = verified_at
+            record.expires_at = expires_at or verified_at + timedelta(days=7)
+            record.metadata_json = metadata_json or {}
+            record.updated_at = verified_at
+        await self.session.flush()
+        return provider_principal_mapping_from_record(record)
+
+    async def active_principals(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> list[ProviderAclPrincipal]:
+        current = now or datetime.now(UTC)
+        result = await self.session.execute(
+            select(ProviderPrincipalMappingRecord).where(
+                ProviderPrincipalMappingRecord.workspace_id == workspace_id,
+                ProviderPrincipalMappingRecord.user_id == user_id,
+                ProviderPrincipalMappingRecord.status == "active",
+                ProviderPrincipalMappingRecord.expires_at > current,
+            )
+        )
+        return [
+            provider_principal_mapping_from_record(record).principal
+            for record in result.scalars()
+        ]
+
+
+def provider_principal_mapping_from_record(
+    record: ProviderPrincipalMappingRecord,
+) -> ProviderPrincipalMapping:
+    return ProviderPrincipalMapping(
+        id=record.id,
+        workspace_id=record.workspace_id,
+        user_id=record.user_id,
+        principal=ProviderAclPrincipal(
+            provider=record.provider,
+            principal_type=record.principal_type,
+            external_id_hash=record.principal_id_hash,
+        ),
+        match_method=record.match_method,
+        status=record.status,
+        last_verified_at=record.last_verified_at,
+        expires_at=record.expires_at,
+        metadata_json=dict(record.metadata_json),
+    )
+
 
 def provider_acl_resources_for_chunk(
     chunk: SourceChunk,
@@ -331,6 +497,46 @@ def provider_acl_resources_for_chunk(
     return resources
 
 
+def _authorize_snapshot(
+    *,
+    snapshot: ProviderAclSnapshot | None,
+    principals: list[ProviderAclPrincipal],
+    now: datetime | None = None,
+) -> ProviderAclDecision:
+    if snapshot is None:
+        return ProviderAclDecision(False, "provider_acl_missing_snapshot")
+    current = now or datetime.now(UTC)
+    if snapshot.expires_at <= current:
+        return ProviderAclDecision(
+            False,
+            "provider_acl_stale",
+            snapshot_id=snapshot.id,
+        )
+    principal_keys = {
+        (principal.provider, principal.principal_type, principal.external_id_hash)
+        for principal in principals
+    }
+    for entry in snapshot.entries:
+        if entry.effect != "allow" or entry.permission != "read":
+            continue
+        key = (
+            entry.principal.provider,
+            entry.principal.principal_type,
+            entry.principal.external_id_hash,
+        )
+        if key in principal_keys:
+            return ProviderAclDecision(
+                True,
+                "provider_acl",
+                snapshot_id=snapshot.id,
+            )
+    return ProviderAclDecision(
+        False,
+        "provider_acl_denied",
+        snapshot_id=snapshot.id,
+    )
+
+
 def _snapshot_hash(
     resource: ProviderAclResourceRef, entries: list[ProviderAclEntry]
 ) -> str:
@@ -361,6 +567,21 @@ def _snapshot_key(
         resource.resource_type,
         resource.external_id_hash,
     )
+
+
+def _principal_mapping_id(
+    *,
+    workspace_id: str,
+    user_id: str,
+    principal: ProviderAclPrincipal,
+) -> str:
+    digest = sha256_digest(
+        (
+            f"{workspace_id}:{user_id}:{principal.provider}:"
+            f"{principal.principal_type}:{principal.external_id_hash}"
+        ).encode()
+    )
+    return f"ppm_{digest.removeprefix('sha256:')[:24]}"
 
 
 def _provider_from_metadata(metadata: dict[str, object]) -> str:

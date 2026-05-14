@@ -7,6 +7,8 @@ This runbook defines the minimum hosted beta operating model for Cortex.
 - `api`: stateless FastAPI service behind managed HTTPS ingress.
 - `worker-pipeline`: Kafka consumer group for normalization, chunking,
   embedding, and downstream pipeline events.
+- `worker-lifecycle`: queued deletion/export worker for lifecycle compliance
+  jobs.
 - `migrate`: explicit one-shot Alembic migration job.
 - Postgres: source of truth for tenant, connector, audit, job, retrieval, and
   billing/lifecycle state.
@@ -32,7 +34,9 @@ Deploy order:
 2. Run `migrate` once against the target database.
 3. Deploy `api`.
 4. Deploy `worker-pipeline`.
-5. Verify readiness, worker logs, Kafka topic access, and connector smoke.
+5. Deploy `worker-lifecycle` when lifecycle queueing is enabled.
+6. Verify readiness, worker logs, Kafka topic access, lifecycle queue drain, and
+   connector smoke.
 
 ## Migration Strategy
 
@@ -52,6 +56,8 @@ Minimum alert rules:
 - Postgres connection exhaustion or sustained error rate.
 - Payload/object storage write failures.
 - Provider webhook signature failures above baseline.
+- Provider ACL stale or missing snapshot alerts above baseline.
+- Lifecycle deletion/export failures or stuck leases.
 - Error rate above beta SLO by service.
 
 ## Support Diagnostics

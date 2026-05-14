@@ -1,7 +1,8 @@
 # Operations Evidence
 
 This directory stores dated evidence for restore, rollback, load, and cost
-drills.
+drills, plus local implementation evidence that explicitly distinguishes itself
+from staging or production drill proof.
 
 Evidence entries must state:
 

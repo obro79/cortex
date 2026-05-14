@@ -30,6 +30,8 @@ class LinearClient(Protocol):
         limit: int = 25,
     ) -> LinearIssuesPage: ...
 
+    async def team_members(self, *, api_token: str, team_id: str) -> list[str]: ...
+
 
 class EmptyLinearClient:
     async def list_issues(
@@ -41,6 +43,9 @@ class EmptyLinearClient:
         limit: int = 25,
     ) -> LinearIssuesPage:
         return LinearIssuesPage(issues=[], next_cursor=None)
+
+    async def team_members(self, *, api_token: str, team_id: str) -> list[str]:
+        return []
 
 
 class LinearGraphQLClient:
@@ -130,6 +135,26 @@ class RealLinearClient:
             next_cursor=str(next_cursor) if next_cursor else None,
         )
 
+    async def team_members(self, *, api_token: str, team_id: str) -> list[str]:
+        payload = await self.graphql.execute(
+            api_token=api_token,
+            query=TEAM_MEMBERS_QUERY,
+            variables={"teamId": team_id},
+        )
+        users = (
+            payload.get("data", {}).get("team", {}).get("members", {}).get("nodes", [])
+        )
+        if not isinstance(users, list):
+            raise LinearPermanentError("linear_invalid_team_members")
+        members: list[str] = []
+        for user in users:
+            if not isinstance(user, dict):
+                continue
+            external_id = user.get("id") or user.get("email")
+            if external_id:
+                members.append(str(external_id))
+        return members
+
 
 def _issue_filter(team_or_project_id: str | None) -> dict[str, object] | None:
     if not team_or_project_id:
@@ -162,6 +187,19 @@ query CortexIssues($first: Int!, $after: String, $filter: IssueFilter) {
       comments(first: 10) { nodes { id body createdAt updatedAt } }
     }
     pageInfo { hasNextPage endCursor }
+  }
+}
+"""
+
+TEAM_MEMBERS_QUERY = """
+query CortexTeamMembers($teamId: String!) {
+  team(id: $teamId) {
+    members {
+      nodes {
+        id
+        email
+      }
+    }
   }
 }
 """

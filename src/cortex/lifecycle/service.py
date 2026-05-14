@@ -59,7 +59,7 @@ class InMemoryLifecycleRepository:
             status=LifecycleActionStatus.COMPLETED,
             completed_at=datetime.now(UTC),
             metadata_json={
-                **tombstone.metadata_json,
+                **_terminal_metadata(tombstone.metadata_json),
                 "deleted_counts_json": dict(deleted_counts_json),
             },
         )
@@ -78,13 +78,69 @@ class InMemoryLifecycleRepository:
             tombstone,
             status=LifecycleActionStatus.FAILED,
             metadata_json={
-                **tombstone.metadata_json,
+                **_clear_lease_metadata(tombstone.metadata_json),
                 "error_code": error_code,
                 **dict(metadata_json or {}),
             },
         )
         self.deletion_tombstones[tombstone_id] = failed
         return failed
+
+    def get_deletion_tombstone(self, tombstone_id: str) -> DeletionTombstone:
+        return self.deletion_tombstones[tombstone_id]
+
+    def list_tombstones(
+        self,
+        *,
+        workspace_id: str | None = None,
+        status: LifecycleActionStatus | None = None,
+    ) -> list[DeletionTombstone]:
+        return [
+            tombstone
+            for tombstone in self.deletion_tombstones.values()
+            if (workspace_id is None or tombstone.workspace_id == workspace_id)
+            and (status is None or tombstone.status == status)
+        ]
+
+    def lease_deletion_tombstone(
+        self,
+        *,
+        tombstone_id: str,
+        worker_id: str,
+        lease_expires_at: datetime,
+    ) -> DeletionTombstone:
+        tombstone = self.deletion_tombstones[tombstone_id]
+        leased = replace(
+            tombstone,
+            status=LifecycleActionStatus.RUNNING,
+            metadata_json={
+                **tombstone.metadata_json,
+                "lease_owner_id": worker_id,
+                "lease_expires_at": lease_expires_at.isoformat(),
+                "attempt_count": _metadata_int(tombstone.metadata_json, "attempt_count")
+                + 1,
+            },
+        )
+        self.deletion_tombstones[tombstone_id] = leased
+        return leased
+
+    def retry_deletion_tombstone(
+        self,
+        *,
+        tombstone_id: str,
+        error_code: str,
+    ) -> DeletionTombstone:
+        tombstone = self.deletion_tombstones[tombstone_id]
+        retried = replace(
+            tombstone,
+            status=LifecycleActionStatus.REQUESTED,
+            metadata_json={
+                **_clear_lease_metadata(tombstone.metadata_json),
+                "last_error_code": error_code,
+            },
+        )
+        self.deletion_tombstones[tombstone_id] = retried
+        return retried
 
     def add_export_job(self, job: ExportJob) -> ExportJob:
         self.export_jobs[job.id] = job
@@ -104,7 +160,7 @@ class InMemoryLifecycleRepository:
             destination_ref=destination_ref,
             completed_at=datetime.now(UTC),
             metadata_json={
-                **job.metadata_json,
+                **_terminal_metadata(job.metadata_json),
                 **dict(metadata_json or {}),
             },
         )
@@ -116,10 +172,63 @@ class InMemoryLifecycleRepository:
         failed = replace(
             job,
             status=LifecycleActionStatus.FAILED,
-            metadata_json={**job.metadata_json, "error_code": error_code},
+            metadata_json={
+                **_clear_lease_metadata(job.metadata_json),
+                "error_code": error_code,
+            },
         )
         self.export_jobs[job_id] = failed
         return failed
+
+    def get_export_job(self, job_id: str) -> ExportJob:
+        return self.export_jobs[job_id]
+
+    def list_export_jobs(
+        self,
+        *,
+        workspace_id: str | None = None,
+        status: LifecycleActionStatus | None = None,
+    ) -> list[ExportJob]:
+        return [
+            job
+            for job in self.export_jobs.values()
+            if (workspace_id is None or job.workspace_id == workspace_id)
+            and (status is None or job.status == status)
+        ]
+
+    def lease_export_job(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        lease_expires_at: datetime,
+    ) -> ExportJob:
+        job = self.export_jobs[job_id]
+        leased = replace(
+            job,
+            status=LifecycleActionStatus.RUNNING,
+            metadata_json={
+                **job.metadata_json,
+                "lease_owner_id": worker_id,
+                "lease_expires_at": lease_expires_at.isoformat(),
+                "attempt_count": _metadata_int(job.metadata_json, "attempt_count") + 1,
+            },
+        )
+        self.export_jobs[job_id] = leased
+        return leased
+
+    def retry_export_job(self, *, job_id: str, error_code: str) -> ExportJob:
+        job = self.export_jobs[job_id]
+        retried = replace(
+            job,
+            status=LifecycleActionStatus.REQUESTED,
+            metadata_json={
+                **_clear_lease_metadata(job.metadata_json),
+                "last_error_code": error_code,
+            },
+        )
+        self.export_jobs[job_id] = retried
+        return retried
 
 
 def retention_policy_from_record(record: RetentionPolicyRecord) -> RetentionPolicy:
@@ -225,7 +334,7 @@ class SqlAlchemyLifecycleRepository:
         record.status = LifecycleActionStatus.COMPLETED.value
         record.completed_at = datetime.now(UTC)
         record.metadata_json = {
-            **record.metadata_json,
+            **_terminal_metadata(record.metadata_json),
             "deleted_counts_json": dict(deleted_counts_json),
         }
         await self.session.flush()
@@ -241,12 +350,17 @@ class SqlAlchemyLifecycleRepository:
         record = await self._deletion_tombstone_record(tombstone_id)
         record.status = LifecycleActionStatus.FAILED.value
         record.metadata_json = {
-            **record.metadata_json,
+            **_clear_lease_metadata(record.metadata_json),
             "error_code": error_code,
             **dict(metadata_json or {}),
         }
         await self.session.flush()
         return deletion_tombstone_from_record(record)
+
+    async def get_deletion_tombstone(self, tombstone_id: str) -> DeletionTombstone:
+        return deletion_tombstone_from_record(
+            await self._deletion_tombstone_record(tombstone_id)
+        )
 
     async def add_export_job(self, job: ExportJob) -> ExportJob:
         record = ExportJobRecord(
@@ -275,32 +389,120 @@ class SqlAlchemyLifecycleRepository:
         record.status = LifecycleActionStatus.COMPLETED.value
         record.destination_ref = destination_ref
         record.completed_at = datetime.now(UTC)
-        record.metadata_json = {**record.metadata_json, **dict(metadata_json or {})}
+        record.metadata_json = {
+            **_terminal_metadata(record.metadata_json),
+            **dict(metadata_json or {}),
+        }
         await self.session.flush()
         return export_job_from_record(record)
 
     async def fail_export_job(self, *, job_id: str, error_code: str) -> ExportJob:
         record = await self._export_job_record(job_id)
         record.status = LifecycleActionStatus.FAILED.value
-        record.metadata_json = {**record.metadata_json, "error_code": error_code}
+        record.metadata_json = {
+            **_clear_lease_metadata(record.metadata_json),
+            "error_code": error_code,
+        }
         await self.session.flush()
         return export_job_from_record(record)
+
+    async def get_export_job(self, job_id: str) -> ExportJob:
+        return export_job_from_record(await self._export_job_record(job_id))
 
     async def list_tombstones(
         self,
         *,
-        workspace_id: str,
+        workspace_id: str | None = None,
         status: LifecycleActionStatus | None = None,
     ) -> list[DeletionTombstone]:
-        statement = select(DeletionTombstoneRecord).where(
-            DeletionTombstoneRecord.workspace_id == workspace_id
-        )
+        statement = select(DeletionTombstoneRecord)
+        if workspace_id is not None:
+            statement = statement.where(
+                DeletionTombstoneRecord.workspace_id == workspace_id
+            )
         if status is not None:
             statement = statement.where(
                 DeletionTombstoneRecord.status == LifecycleActionStatus(status).value
             )
         result = await self.session.execute(statement)
         return [deletion_tombstone_from_record(record) for record in result.scalars()]
+
+    async def lease_deletion_tombstone(
+        self,
+        *,
+        tombstone_id: str,
+        worker_id: str,
+        lease_expires_at: datetime,
+    ) -> DeletionTombstone:
+        record = await self._deletion_tombstone_record(tombstone_id)
+        record.status = LifecycleActionStatus.RUNNING.value
+        record.metadata_json = {
+            **record.metadata_json,
+            "lease_owner_id": worker_id,
+            "lease_expires_at": lease_expires_at.isoformat(),
+            "attempt_count": _metadata_int(record.metadata_json, "attempt_count") + 1,
+        }
+        await self.session.flush()
+        return deletion_tombstone_from_record(record)
+
+    async def retry_deletion_tombstone(
+        self,
+        *,
+        tombstone_id: str,
+        error_code: str,
+    ) -> DeletionTombstone:
+        record = await self._deletion_tombstone_record(tombstone_id)
+        record.status = LifecycleActionStatus.REQUESTED.value
+        record.metadata_json = {
+            **_clear_lease_metadata(record.metadata_json),
+            "last_error_code": error_code,
+        }
+        await self.session.flush()
+        return deletion_tombstone_from_record(record)
+
+    async def list_export_jobs(
+        self,
+        *,
+        workspace_id: str | None = None,
+        status: LifecycleActionStatus | None = None,
+    ) -> list[ExportJob]:
+        statement = select(ExportJobRecord)
+        if workspace_id is not None:
+            statement = statement.where(ExportJobRecord.workspace_id == workspace_id)
+        if status is not None:
+            statement = statement.where(
+                ExportJobRecord.status == LifecycleActionStatus(status).value
+            )
+        result = await self.session.execute(statement)
+        return [export_job_from_record(record) for record in result.scalars()]
+
+    async def lease_export_job(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        lease_expires_at: datetime,
+    ) -> ExportJob:
+        record = await self._export_job_record(job_id)
+        record.status = LifecycleActionStatus.RUNNING.value
+        record.metadata_json = {
+            **record.metadata_json,
+            "lease_owner_id": worker_id,
+            "lease_expires_at": lease_expires_at.isoformat(),
+            "attempt_count": _metadata_int(record.metadata_json, "attempt_count") + 1,
+        }
+        await self.session.flush()
+        return export_job_from_record(record)
+
+    async def retry_export_job(self, *, job_id: str, error_code: str) -> ExportJob:
+        record = await self._export_job_record(job_id)
+        record.status = LifecycleActionStatus.REQUESTED.value
+        record.metadata_json = {
+            **_clear_lease_metadata(record.metadata_json),
+            "last_error_code": error_code,
+        }
+        await self.session.flush()
+        return export_job_from_record(record)
 
     async def _deletion_tombstone_record(
         self, tombstone_id: str
@@ -356,6 +558,53 @@ class LifecycleRepository(Protocol):
     ) -> ExportJob | Awaitable[ExportJob]: ...
 
     def fail_export_job(
+        self, *, job_id: str, error_code: str
+    ) -> ExportJob | Awaitable[ExportJob]: ...
+
+    def get_deletion_tombstone(
+        self, tombstone_id: str
+    ) -> DeletionTombstone | Awaitable[DeletionTombstone]: ...
+
+    def list_tombstones(
+        self,
+        *,
+        workspace_id: str | None = None,
+        status: LifecycleActionStatus | None = None,
+    ) -> list[DeletionTombstone] | Awaitable[list[DeletionTombstone]]: ...
+
+    def lease_deletion_tombstone(
+        self,
+        *,
+        tombstone_id: str,
+        worker_id: str,
+        lease_expires_at: datetime,
+    ) -> DeletionTombstone | Awaitable[DeletionTombstone]: ...
+
+    def retry_deletion_tombstone(
+        self,
+        *,
+        tombstone_id: str,
+        error_code: str,
+    ) -> DeletionTombstone | Awaitable[DeletionTombstone]: ...
+
+    def get_export_job(self, job_id: str) -> ExportJob | Awaitable[ExportJob]: ...
+
+    def list_export_jobs(
+        self,
+        *,
+        workspace_id: str | None = None,
+        status: LifecycleActionStatus | None = None,
+    ) -> list[ExportJob] | Awaitable[list[ExportJob]]: ...
+
+    def lease_export_job(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        lease_expires_at: datetime,
+    ) -> ExportJob | Awaitable[ExportJob]: ...
+
+    def retry_export_job(
         self, *, job_id: str, error_code: str
     ) -> ExportJob | Awaitable[ExportJob]: ...
 
@@ -440,6 +689,7 @@ class LifecycleService:
         target_id: str,
         requested_by_user_id: str,
         reason: str,
+        queue_execution: bool = False,
     ) -> DeletionTombstone:
         now = datetime.now(UTC)
         target_id_hash = sha256_digest(target_id.encode())
@@ -452,6 +702,7 @@ class LifecycleService:
             requested_by_user_id=requested_by_user_id,
             reason=reason,
             created_at=now,
+            metadata_json={"target_id_ref": target_id} if queue_execution else {},
         )
         saved = await _resolve(self.repository.add_deletion_tombstone(tombstone))
         self.audit_log.append(
@@ -482,11 +733,25 @@ class LifecycleService:
             requested_by_user_id=requested_by_user_id,
             reason=reason,
         )
+        return await self.execute_deletion_tombstone(
+            tombstone=tombstone,
+            target_id=target_id,
+            executor=executor,
+        )
+
+    async def execute_deletion_tombstone(
+        self,
+        *,
+        tombstone: DeletionTombstone,
+        target_id: str,
+        executor: LifecycleDeletionExecutor,
+    ) -> DeletionTombstone:
+        counts: Mapping[str, int] = {}
         try:
             counts = await _resolve(
                 executor.delete(
-                    workspace_id=workspace_id,
-                    target_type=target_type,
+                    workspace_id=tombstone.workspace_id,
+                    target_type=tombstone.target_type,
                     target_id=target_id,
                 )
             )
@@ -503,10 +768,10 @@ class LifecycleService:
                 )
             )
             self.audit_log.append(
-                workspace_id=workspace_id,
-                actor_id=requested_by_user_id,
+                workspace_id=tombstone.workspace_id,
+                actor_id=tombstone.requested_by_user_id,
                 action="lifecycle.deletion.failed",
-                target_type=target_type,
+                target_type=tombstone.target_type,
                 target_id=target_id,
                 decision="allowed",
                 reason=error.error_code,
@@ -521,10 +786,10 @@ class LifecycleService:
                 )
             )
             self.audit_log.append(
-                workspace_id=workspace_id,
-                actor_id=requested_by_user_id,
+                workspace_id=tombstone.workspace_id,
+                actor_id=tombstone.requested_by_user_id,
                 action="lifecycle.deletion.failed",
-                target_type=target_type,
+                target_type=tombstone.target_type,
                 target_id=target_id,
                 decision="allowed",
                 reason="executor_failed",
@@ -537,10 +802,10 @@ class LifecycleService:
             )
         )
         self.audit_log.append(
-            workspace_id=workspace_id,
-            actor_id=requested_by_user_id,
+            workspace_id=tombstone.workspace_id,
+            actor_id=tombstone.requested_by_user_id,
             action="lifecycle.deletion.complete",
-            target_type=target_type,
+            target_type=tombstone.target_type,
             target_id=target_id,
             decision="allowed",
             metadata_json={"deleted_counts_json": dict(counts)},
@@ -594,11 +859,19 @@ class LifecycleService:
             requested_by_user_id=requested_by_user_id,
             export_scope=export_scope,
         )
+        return await self.execute_export_job(job=job, executor=executor)
+
+    async def execute_export_job(
+        self,
+        *,
+        job: ExportJob,
+        executor: LifecycleExportExecutor,
+    ) -> ExportJob:
         try:
             result = await _resolve(
                 executor.export(
-                    workspace_id=workspace_id,
-                    export_scope=export_scope,
+                    workspace_id=job.workspace_id,
+                    export_scope=job.export_scope,
                 )
             )
         except Exception:
@@ -609,8 +882,8 @@ class LifecycleService:
                 )
             )
             self.audit_log.append(
-                workspace_id=workspace_id,
-                actor_id=requested_by_user_id,
+                workspace_id=job.workspace_id,
+                actor_id=job.requested_by_user_id,
                 action="lifecycle.export.failed",
                 target_type="export_job",
                 target_id=job.id,
@@ -626,14 +899,14 @@ class LifecycleService:
             )
         )
         self.audit_log.append(
-            workspace_id=workspace_id,
-            actor_id=requested_by_user_id,
+            workspace_id=job.workspace_id,
+            actor_id=job.requested_by_user_id,
             action="lifecycle.export.complete",
             target_type="export_job",
             target_id=job.id,
             decision="allowed",
             metadata_json={
-                "export_scope": export_scope,
+                "export_scope": job.export_scope,
                 "destination_ref": result.destination_ref,
                 **result.metadata_json,
             },
@@ -673,6 +946,31 @@ def _validate_deletion_counts(counts: Mapping[str, int]) -> None:
         }
     if mismatches:
         raise LifecycleDeletionIntegrityError(mismatches)
+
+
+def _clear_lease_metadata(metadata_json: Mapping[str, object]) -> dict[str, object]:
+    metadata = dict(metadata_json)
+    metadata.pop("lease_owner_id", None)
+    metadata.pop("lease_expires_at", None)
+    return metadata
+
+
+def _terminal_metadata(metadata_json: Mapping[str, object]) -> dict[str, object]:
+    metadata = _clear_lease_metadata(metadata_json)
+    metadata.pop("target_id_ref", None)
+    return metadata
+
+
+def _metadata_int(metadata_json: Mapping[str, object], key: str) -> int:
+    value = metadata_json.get(key, 0)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
 
 
 def _cutoff(reference: datetime, days: int | None) -> datetime | None:

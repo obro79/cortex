@@ -1,5 +1,6 @@
 from cortex.lifecycle.executors import (
     InMemoryVectorLifecycleDeleter,
+    QdrantLifecycleDeleter,
     RepositoryLifecycleDeletionExecutor,
     RepositoryLifecycleExportExecutor,
 )
@@ -11,6 +12,7 @@ from cortex.lifecycle.models import (
     RetentionPolicy,
     RetentionSweepPlan,
 )
+from cortex.lifecycle.queue import LifecycleQueueRunResult, LifecycleQueueWorker
 from cortex.lifecycle.service import (
     InMemoryLifecycleRepository,
     LifecycleDeletionExecutor,
@@ -32,7 +34,10 @@ __all__ = [
     "LifecycleRepository",
     "LifecycleActionStatus",
     "LifecycleExportResult",
+    "LifecycleQueueRunResult",
+    "LifecycleQueueWorker",
     "LifecycleService",
+    "QdrantLifecycleDeleter",
     "RepositoryLifecycleDeletionExecutor",
     "RepositoryLifecycleExportExecutor",
     "RetentionPolicy",

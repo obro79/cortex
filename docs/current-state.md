@@ -23,17 +23,28 @@ this snapshot.
   requested workspace before billing plan quota is consumed.
 - The app factory registers in-memory billing for local/test mode and SQL-backed
   billing repositories plus async plan enforcement for SQL mode.
+- SQL mode now wires public tenant resolution to the SQL tenant repository
+  instead of falling back to the in-memory tenant repository.
 - Stripe checkout/portal session creation is behind an injectable gateway, and
   verified Stripe webhooks are recorded idempotently before synchronizing local
   billing state.
+- Customer-facing checkout, portal, and Stripe webhook API routes are present
+  and permissioned for billing admins where applicable.
 - Lifecycle deletion now has repository-backed executor foundations: deletion
   creates a hashed tombstone, deletes or tombstones repository data, removes
   payload/vector refs where wired, completes or fails the tombstone, and records
   an audit trail.
+- Lifecycle deletion/export has API request/status/lease/execute/retry routes,
+  an SQL lifecycle worker role, and Qdrant vector deletion support.
 - Lifecycle persistence tables now exist for retention policies, deletion
   tombstones, and export jobs.
 - Provider-native ACL snapshots can now be attached to permission checks so
   protected connector chunks fail closed on missing, stale, or non-matching ACLs.
+- Provider ACL ingestion collectors can pull Slack channel members, GitHub
+  repository collaborators, and Linear team members, then persist hashed
+  snapshot entries and authenticated user-to-provider-principal mappings.
+- Provider ACL freshness reporting can flag stale and missing snapshots without
+  logging raw provider IDs.
 - Tests cover connector tenant/RBAC/plan enforcement and the lifecycle deletion
   executor path.
 
@@ -71,8 +82,8 @@ this snapshot.
 - Stripe webhook signature verification, duplicate-event handling, checkout
   session creation, and billing portal session creation are implemented behind
   testable provider boundaries.
-- Production Stripe credentials, live checkout/portal smoke tests, and customer
-  plan-management routes remain launch-gated.
+- Production Stripe credentials and live checkout/portal/webhook smoke tests
+  remain launch-gated.
 
 ### Lifecycle and Compliance
 
@@ -83,8 +94,8 @@ this snapshot.
   points, and payload refs for local repository-backed flows.
 - SQL-compatible lifecycle service and executor boundaries are async-safe, and
   deletion tombstones fail closed on cleanup mismatches.
-- Production lifecycle API/worker queueing and staging drill evidence are still
-  required before deletion/export can be claimed complete.
+- Staging deletion/export drill evidence is still required before
+  deletion/export can be claimed complete.
 
 ### Provider ACLs
 
@@ -92,8 +103,9 @@ this snapshot.
   references.
 - Retrieval permission filtering can require caller provider principals and deny
   protected chunks when snapshots are missing, stale, or non-matching.
-- Durable snapshot ingestion from provider APIs and staging freshness drills are
-  still required.
+- Snapshot ingestion from provider APIs, hashed principal mapping persistence,
+  and freshness reporting are implemented. Scheduled production ingestion and
+  staging freshness drills are still required.
 
 ### Operations
 
@@ -110,43 +122,42 @@ this snapshot.
 
 - End-to-end onboarding/browser flows, invite acceptance, terms gates, logout,
   account deletion, and full CSRF browser coverage.
-- Production Stripe activation, customer plan-management routes, and live
-  checkout/portal/webhook smoke evidence.
-- Production lifecycle worker queueing and staged deletion/export drill evidence.
-- Provider-native ACL snapshot ingestion from real provider APIs and freshness
-  drill evidence.
+- Production Stripe activation and live checkout/portal/webhook smoke evidence.
+- Staged lifecycle deletion/export drill evidence.
+- Scheduled provider-native ACL ingestion and freshness drill evidence.
 - Full customer admin UI and browser coverage.
 - Hosted support console and production drill evidence.
-- SQL-backed tenant service wiring beyond current migrations and local/in-memory
-  implementations.
+- Dev routes remain public when explicitly feature-enabled and must stay off
+  outside local/test deployments.
 
 ## Latest Validation
 
-The latest local validation after the non-UI hardening work passed:
+The latest local validation after the production activation hardening work
+passed:
 
-- `uv run pytest`: 396 passed
+- `uv run pytest`: 414 passed
 - `uv run ruff check .`: passed
 - `uv run ruff format --check .`: passed
 - `uv run mypy src`: passed
 - `docker compose config`: passed
+- `docker compose --profile lifecycle config`: passed
 - `git diff --check`: passed
 - `uv run alembic heads`: passed with one head,
-  `0015_provider_acl_snapshots`
+  `0016_provider_principal_mappings`
 - `uv run alembic upgrade head --sql`: passed
-- `uv run alembic downgrade 0015_provider_acl_snapshots:0013_lifecycle_persistence --sql`:
+- `uv run alembic downgrade 0016_provider_principal_mappings:0013_lifecycle_persistence --sql`:
   passed
 
 Deep review follow-up plan:
 
 - `docs/non-ui-enterprise-readiness-followup-autoplan.md`
 
-Deep review blockers:
+Recent follow-up blockers closed locally:
 
-- SQL lifecycle service access currently needs async wiring before production use.
-- Source deletion needs regression coverage for mixed object-level and file-backed
+- SQL lifecycle service access has async API and worker wiring.
+- Source deletion has regression coverage for mixed object-level and file-backed
   chunks.
-- Lifecycle tombstones need fail-closed behavior for vector and payload cleanup
-  mismatches.
+- Lifecycle tombstones fail closed for vector and payload cleanup mismatches.
 
 ## Beta Positioning
 

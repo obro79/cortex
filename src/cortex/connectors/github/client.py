@@ -40,6 +40,14 @@ class GitHubClient(Protocol):
         limit: int = 25,
     ) -> GitHubRepoBackfill: ...
 
+    async def repository_collaborators(
+        self,
+        *,
+        access_token: str,
+        owner: str,
+        repo: str,
+    ) -> list[str]: ...
+
 
 class EmptyGitHubClient:
     async def list_installation_repositories(
@@ -56,6 +64,15 @@ class EmptyGitHubClient:
         limit: int = 25,
     ) -> GitHubRepoBackfill:
         return GitHubRepoBackfill(events=[])
+
+    async def repository_collaborators(
+        self,
+        *,
+        access_token: str,
+        owner: str,
+        repo: str,
+    ) -> list[str]:
+        return []
 
 
 class GitHubHttpClient:
@@ -173,6 +190,29 @@ class RealGitHubClient:
                     }
                 )
         return GitHubRepoBackfill(events=events)
+
+    async def repository_collaborators(
+        self,
+        *,
+        access_token: str,
+        owner: str,
+        repo: str,
+    ) -> list[str]:
+        payload = await self.http.get(
+            f"/repos/{owner}/{repo}/collaborators",
+            access_token=access_token,
+            params={"per_page": 100},
+        )
+        if not isinstance(payload, list):
+            raise GitHubPermanentError("github_invalid_collaborators")
+        collaborators: list[str] = []
+        for user in payload:
+            if not isinstance(user, dict):
+                continue
+            external_id = user.get("id") or user.get("login")
+            if external_id:
+                collaborators.append(str(external_id))
+        return collaborators
 
 
 def _commit_message(commit: dict[str, Any]) -> str | None:

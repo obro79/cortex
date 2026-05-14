@@ -13,6 +13,7 @@ from cortex.workers.heartbeat import (
     InMemoryWorkerHeartbeatRepository,
     default_worker_instance_id,
 )
+from cortex.workers.lifecycle import process_lifecycle_queue_once
 
 app = typer.Typer(help="Cortex worker entrypoint")
 
@@ -65,6 +66,40 @@ async def run_worker(
             session_factory=session_factory,
         )
         await consumer.run_forever(pipeline_topics())
+        return 0
+    if role == "lifecycle":
+        if resolved.cortex_state_backend != "sql":
+            if heartbeat_repository is not None:
+                heartbeat_repository.record(
+                    role=role,
+                    instance_id=worker_instance_id,
+                    status="not_ready",
+                    failure_reason="lifecycle role requires CORTEX_STATE_BACKEND=sql",
+                )
+            raise typer.BadParameter("lifecycle role requires CORTEX_STATE_BACKEND=sql")
+        if not resolved.database_url:
+            if heartbeat_repository is not None:
+                heartbeat_repository.record(
+                    role=role,
+                    instance_id=worker_instance_id,
+                    status="not_ready",
+                    failure_reason="lifecycle role requires DATABASE_URL",
+                )
+            raise typer.BadParameter("lifecycle role requires DATABASE_URL")
+        if heartbeat_repository is not None:
+            heartbeat_repository.record(
+                role=role, instance_id=worker_instance_id, status="starting"
+            )
+        session_factory = create_sessionmaker(resolved.database_url)
+        await process_lifecycle_queue_once(
+            settings=resolved,
+            session_factory=session_factory,
+            worker_id=worker_instance_id,
+        )
+        if heartbeat_repository is not None:
+            heartbeat_repository.record(
+                role=role, instance_id=worker_instance_id, status="ready"
+            )
         return 0
     raise typer.BadParameter(f"Unknown worker role: {role}")
 

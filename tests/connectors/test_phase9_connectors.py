@@ -140,6 +140,36 @@ async def test_github_webhook_verifies_signature_and_persists_json_payload() -> 
     assert services.payload_store.get(raw_event.payload_ref).startswith(b"{")
 
 
+async def test_github_webhook_ignores_unselected_repository() -> None:
+    services = GitHubConnectorServices(app_configured=True, webhook_secret="secret")
+    services.select_repos(workspace_id="ws_1", repos=[{"id": "44"}])
+    body = json.dumps(
+        {
+            "repository": {"id": 55},
+            "pull_request": {"id": 1, "number": 12, "title": "Hidden"},
+        },
+        separators=(",", ":"),
+    ).encode()
+    signature = "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+
+    result = await services.webhook(
+        workspace_id="ws_1",
+        source_connection_id="src_github",
+        body=body,
+        signature=signature,
+        event_name="pull_request",
+        delivery_id="delivery_unselected",
+    )
+
+    assert result == {"ok": True, "status": "ignored_unselected"}
+    assert (
+        services.raw_events.get_by_idempotency_key(
+            "ws_1", "github:ws_1:delivery:delivery_unselected"
+        )
+        is None
+    )
+
+
 async def test_github_webhook_rejects_when_secret_is_not_configured() -> None:
     services = GitHubConnectorServices(app_configured=True)
     body = json.dumps({"repository": {"id": 44}}, separators=(",", ":")).encode()

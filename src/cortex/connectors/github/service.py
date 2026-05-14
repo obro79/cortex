@@ -167,6 +167,9 @@ class GitHubConnectorServices:
         if not _valid_signature(body, signature, self.webhook_secret):
             return {"ok": False, "status": "invalid_signature"}
         payload = json.loads(body)
+        repo_id = _repo_id(payload)
+        if self.repo_ids and repo_id not in self.repo_ids:
+            return {"ok": True, "status": "ignored_unselected"}
         ingestion = self.ingestion
         assert ingestion is not None
         result = await ingestion.ingest(

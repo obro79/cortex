@@ -3,18 +3,23 @@ from typing import Any
 from fastapi import FastAPI
 
 from cortex.api.rate_limit import install_api_rate_limit
+from cortex.api.routes.billing import router as billing_router
+from cortex.api.routes.case_study import router as case_study_router
 from cortex.api.routes.dev import router as dev_router
 from cortex.api.routes.github import router as github_router
 from cortex.api.routes.health import router as health_router
+from cortex.api.routes.lifecycle import router as lifecycle_router
 from cortex.api.routes.linear import router as linear_router
 from cortex.api.routes.repo_docs import router as repo_docs_router
 from cortex.api.routes.slack import router as slack_router
 from cortex.api.routes.ui import router as ui_router
 from cortex.billing import (
     AsyncPlanEnforcementService,
+    HttpStripeGateway,
     InMemoryBillingRepository,
     PlanEnforcementService,
     SqlAlchemyBillingRepository,
+    StripeBillingService,
 )
 from cortex.config import Settings, get_settings
 from cortex.connectors.github.client import RealGitHubClient
@@ -28,12 +33,14 @@ from cortex.dev.workbench import DevWorkbenchService
 from cortex.events.bus import EventBus, KafkaEventBus
 from cortex.ingestion.durable import SessionRawEventIngestionService
 from cortex.ingestion.payloads import FilePayloadStore, PayloadStore
+from cortex.lifecycle import InMemoryLifecycleRepository
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
+from cortex.permissions import InMemoryProviderPrincipalMappingRepository
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.security.audit import InMemoryAuditLogRepository
-from cortex.tenancy import InMemoryTenantRepository
+from cortex.tenancy import InMemoryTenantRepository, SqlAlchemyTenantRepository
 from cortex.ui.source_health import SourceHealthViewService
 
 
@@ -53,6 +60,11 @@ def create_app(
         if resolved.cortex_state_backend == "sql"
         else None
     )
+    app.state.session_factory = session_factory
+    app.state.lifecycle_repository = InMemoryLifecycleRepository()
+    app.state.provider_principal_mapping_repository = (
+        InMemoryProviderPrincipalMappingRepository()
+    )
     if session_factory is not None:
         app.state.billing_repository = SqlAlchemyBillingRepository(session_factory)
         app.state.plan_enforcement = AsyncPlanEnforcementService(
@@ -63,8 +75,18 @@ def create_app(
         app.state.plan_enforcement = PlanEnforcementService(
             app.state.billing_repository
         )
+    if resolved.stripe_webhook_secret:
+        app.state.stripe_billing_service = StripeBillingService(
+            repository=app.state.billing_repository,
+            gateway=HttpStripeGateway(api_key=resolved.stripe_api_key),
+            webhook_secret=resolved.stripe_webhook_secret,
+        )
     if resolved.cortex_public_auth_enabled:
-        app.state.tenant_repository = InMemoryTenantRepository()
+        app.state.tenant_repository = (
+            SqlAlchemyTenantRepository(session_factory)
+            if session_factory is not None
+            else InMemoryTenantRepository()
+        )
     cache = ephemeral_cache
     if cache is None and (
         resolved.cortex_api_rate_limit_enabled
@@ -101,6 +123,14 @@ def create_app(
         else None
     )
     app.include_router(health_router)
+    app.include_router(case_study_router)
+    app.include_router(billing_router)
+    app.include_router(lifecycle_router)
+    if resolved.cortex_dev_workbench_enabled and resolved.cortex_env not in {
+        "local",
+        "test",
+    }:
+        raise ValueError("dev workbench cannot be enabled outside local/test")
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
         app.include_router(dev_router)
