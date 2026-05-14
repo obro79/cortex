@@ -10,14 +10,14 @@
 ## Shared Connector Setup
 
 - [ ] Add connector setup overview page.
-- [ ] Add provider setup service interface.
-- [ ] Add source selection service interface.
-- [ ] Add connector health read model.
-- [ ] Add data-read explanation content per provider.
-- [ ] Add permission checks for setup, source selection, reauth, revoke, and
+- [x] Add provider setup service interface.
+- [x] Add source selection service interface.
+- [x] Add connector health read model.
+- [x] Add data-read explanation content per provider.
+- [x] Add permission checks for setup, source selection, reauth, revoke, and
       backfill retry.
-- [ ] Audit allowed and denied setup actions.
-- [ ] Redact tokens, secrets, private URLs, and raw payloads.
+- [x] Audit allowed and denied setup actions.
+- [x] Redact tokens, secrets, private URLs, and raw payloads.
 
 ## Slack
 
@@ -49,7 +49,7 @@
 ## Closeout
 
 - [ ] Add setup flow tests for each implemented provider.
-- [ ] Add denied-action tests for non-admin users.
+- [x] Add denied-action tests for non-admin users.
 - [ ] Add workspace isolation tests.
-- [ ] Add token/secret redaction tests.
+- [x] Add token/secret redaction tests.
 - [ ] Add browser smoke for Slack and GitHub setup.
