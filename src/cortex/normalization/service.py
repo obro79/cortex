@@ -72,6 +72,12 @@ class SourceNormalizationService:
             return NormalizationServiceResult(
                 status="ignored", raw_event_id=raw_event.id, reason="raw_event_deleted"
             )
+        if raw_event.workspace_id != envelope.workspace_id:
+            return NormalizationServiceResult(
+                status="ignored",
+                raw_event_id=raw_event.id,
+                reason="workspace_mismatch",
+            )
 
         try:
             if raw_event.status != RawEventStatus.PROCESSED:

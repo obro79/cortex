@@ -29,12 +29,12 @@
 
 - [x] Add `TenantContext` or equivalent scoped context object.
 - [x] Add route dependency for resolving active organization/workspace/user.
-- [ ] Add worker job payload contract requiring workspace scope.
+- [x] Add worker job payload contract requiring workspace scope.
 - [ ] Add retrieval scope filter before ranking and citation expansion.
 - [ ] Add UI workspace context resolver.
 - [ ] Add support/admin workspace override contract with reason and audit.
 - [ ] Update APIs to reject missing or unauthorized workspace context.
-- [ ] Update workers to validate resource ownership before acting.
+- [x] Update workers to validate resource ownership before acting.
 - [ ] Update evidence pack, canonical memory, source object, chunk, connector,
       job, and audit reads to enforce workspace scope.
 - [ ] Add tests proving direct cross-workspace ID access is denied.
@@ -93,7 +93,7 @@
 
 - [x] Add unit tests for tenant repositories and membership resolution.
 - [x] Add API tests for authorized, unauthorized, and cross-workspace access.
-- [ ] Add worker tests for workspace-scoped jobs.
+- [x] Add worker tests for workspace-scoped jobs.
 - [ ] Add retrieval isolation tests.
 - [ ] Add onboarding browser tests.
 - [ ] Add invite flow tests.
