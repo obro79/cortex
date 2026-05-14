@@ -3,17 +3,17 @@ from __future__ import annotations
 from html import escape
 
 from cortex.ui.auth import UiActorContext
+from cortex.ui.navigation import ADMIN_ROUTES, workspace_display
 
 
 def render_shell(*, context: UiActorContext, title: str, body: str) -> str:
     nav = "".join(
         [
-            '<a href="/ui">Overview</a>',
-            '<a href="/ui/sources">Sources</a>',
-            '<a href="/ui/connectors">Connectors</a>',
-            '<a href="/ui/jobs">Jobs</a>',
+            _nav_link(route.path, route.label, route.implemented)
+            for route in ADMIN_ROUTES
         ]
     )
+    display = workspace_display(context)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -128,8 +128,8 @@ def render_shell(*, context: UiActorContext, title: str, body: str) -> str:
       <div>
         <h1>Cortex</h1>
         <div class="meta">
-          Workspace {escape(context.workspace_id)}
-          · Actor {escape(context.actor_id)}
+          Workspace {escape(display.workspace_id)}
+          · Actor {escape(display.actor_id)}
         </div>
       </div>
       <nav>{nav}</nav>
@@ -138,3 +138,9 @@ def render_shell(*, context: UiActorContext, title: str, body: str) -> str:
   <main>{body}</main>
 </body>
 </html>"""
+
+
+def _nav_link(path: str, label: str, implemented: bool) -> str:
+    href = "/ui" if path == "/" else f"/ui{path}"
+    state = "" if implemented else ' aria-disabled="true"'
+    return f'<a href="{escape(href)}"{state}>{escape(label)}</a>'
