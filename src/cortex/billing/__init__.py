@@ -8,17 +8,46 @@ from cortex.billing.models import (
     UsageDimension,
     UsageMeter,
 )
-from cortex.billing.service import InMemoryBillingRepository, PlanEnforcementService
+from cortex.billing.service import (
+    AsyncPlanEnforcementService,
+    BillingRepository,
+    InMemoryBillingRepository,
+    PlanEnforcementService,
+    SqlAlchemyBillingRepository,
+)
+from cortex.billing.stripe import (
+    HttpStripeGateway,
+    StripeBillingService,
+    StripeCheckoutRequest,
+    StripeGateway,
+    StripePortalRequest,
+    StripeSession,
+    StripeWebhookResult,
+    StripeWebhookVerificationError,
+    verify_stripe_webhook,
+)
 
 __all__ = [
+    "AsyncPlanEnforcementService",
+    "BillingRepository",
     "BillingCustomer",
     "BillingStatus",
+    "HttpStripeGateway",
     "EntitlementDecision",
     "InMemoryBillingRepository",
     "PlanEnforcementService",
     "PlanEntitlements",
+    "SqlAlchemyBillingRepository",
+    "StripeBillingService",
+    "StripeCheckoutRequest",
+    "StripeGateway",
+    "StripePortalRequest",
+    "StripeSession",
+    "StripeWebhookResult",
+    "StripeWebhookVerificationError",
     "Subscription",
     "SubscriptionStatus",
     "UsageDimension",
     "UsageMeter",
+    "verify_stripe_webhook",
 ]

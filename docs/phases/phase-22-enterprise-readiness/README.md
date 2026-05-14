@@ -13,3 +13,6 @@ Phase source of truth: [`../implementation-roadmap.md`](../implementation-roadma
 - [Test plan](test-plan.md)
 - [Autoplan review](autoplan-review.md)
 - [Engineering review](plan-eng-review.md)
+- [Current state snapshot](../../current-state.md)
+- [Non-UI enterprise readiness autoplan](../../non-ui-enterprise-readiness-autoplan.md)
+- [Non-UI enterprise readiness follow-up autoplan](../../non-ui-enterprise-readiness-followup-autoplan.md)

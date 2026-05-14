@@ -2,13 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
+from cortex.auth.dependencies import (
+    enforce_plan_limit,
+    require_permission,
+    require_tenant_context,
+)
+from cortex.billing import UsageDimension
 from cortex.connectors.slack.service import SlackConnectorServices
 from cortex.events.in_memory import InMemoryEventBus
+from cortex.tenancy import TenantContext
+from cortex.tenancy.rbac import Permission
 
 router = APIRouter(prefix="/connectors/slack", tags=["slack"])
+TENANT_CONTEXT_DEPENDENCY = Depends(require_tenant_context)
 
 
 def get_slack_services(request: Request) -> SlackConnectorServices:
@@ -19,13 +28,22 @@ def get_slack_services(request: Request) -> SlackConnectorServices:
 
 
 @router.post("/oauth/start")
-async def start_oauth(request: Request, body: dict[str, Any]) -> dict[str, object]:
+async def start_oauth(
+    request: Request,
+    body: dict[str, Any],
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
+) -> dict[str, object]:
     workspace_id = str(body.get("workspace_id", ""))
     if not workspace_id:
         raise HTTPException(status_code=422, detail="workspace_id is required")
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.CONNECTOR_SETUP,
+    )
     return get_slack_services(request).oauth.start_install(
         workspace_id=workspace_id,
-        actor_id=str(body["actor_id"]) if "actor_id" in body else None,
+        actor_id=context.user_id,
     )
 
 
@@ -33,11 +51,16 @@ async def start_oauth(request: Request, body: dict[str, Any]) -> dict[str, objec
 async def redirect_oauth_start(
     request: Request,
     workspace_id: str,
-    actor_id: str | None = None,
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
 ) -> RedirectResponse:
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.CONNECTOR_SETUP,
+    )
     response = get_slack_services(request).oauth.start_install(
         workspace_id=workspace_id,
-        actor_id=actor_id,
+        actor_id=context.user_id,
     )
     authorization_url = response.get("authorization_url")
     if not isinstance(authorization_url, str) or not authorization_url:
@@ -80,27 +103,63 @@ async def oauth_callback(
 @router.get("/sources/channels")
 async def list_channels(
     request: Request,
+    workspace_id: str,
     oauth_installation_id: str,
     cursor: str | None = None,
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
 ) -> dict[str, object]:
-    return await get_slack_services(request).sources.list_channels(
-        oauth_installation_id=oauth_installation_id,
-        cursor=cursor,
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.SOURCE_SELECT,
     )
+    try:
+        return await get_slack_services(request).sources.list_channels(
+            workspace_id=workspace_id,
+            oauth_installation_id=oauth_installation_id,
+            cursor=cursor,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
 
 @router.post("/sources/select")
-async def select_sources(request: Request, body: dict[str, Any]) -> dict[str, object]:
+async def select_sources(
+    request: Request,
+    body: dict[str, Any],
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
+) -> dict[str, object]:
     workspace_id = str(body.get("workspace_id", ""))
     installation_id = str(body.get("oauth_installation_id", ""))
     channels = body.get("channels", [])
     if not workspace_id or not installation_id or not isinstance(channels, list):
         raise HTTPException(status_code=422, detail="invalid source selection")
-    return await get_slack_services(request).sources.select_channels(
+    require_permission(
+        context,
         workspace_id=workspace_id,
-        oauth_installation_id=installation_id,
-        channels=[dict(channel) for channel in channels],
+        permission=Permission.SOURCE_SELECT,
     )
+    try:
+        await get_slack_services(request).sources.require_installation_workspace(
+            workspace_id=workspace_id,
+            oauth_installation_id=installation_id,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    await enforce_plan_limit(
+        request,
+        context,
+        dimension=UsageDimension.SOURCES,
+        requested_quantity=len(channels),
+    )
+    try:
+        return await get_slack_services(request).sources.select_channels(
+            workspace_id=workspace_id,
+            oauth_installation_id=installation_id,
+            channels=[dict(channel) for channel in channels],
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
 
 @router.post("/events")
@@ -145,11 +204,25 @@ async def slack_events(
 
 @router.post("/backfill/{source_connection_id}")
 async def backfill_source(
-    request: Request, source_connection_id: str, body: dict[str, Any]
+    request: Request,
+    source_connection_id: str,
+    body: dict[str, Any],
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
 ) -> dict[str, object]:
     workspace_id = str(body.get("workspace_id", ""))
     if not workspace_id:
         raise HTTPException(status_code=422, detail="workspace_id is required")
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.CONNECTOR_SETUP,
+    )
+    await enforce_plan_limit(
+        request,
+        context,
+        dimension=UsageDimension.INDEXED_OBJECTS,
+        requested_quantity=1,
+    )
     services = get_slack_services(request)
     result = await services.backfill.backfill_source(
         workspace_id=workspace_id,
@@ -180,5 +253,14 @@ async def backfill_source(
 
 
 @router.get("/health/{workspace_id}")
-async def slack_health(request: Request, workspace_id: str) -> dict[str, object]:
+async def slack_health(
+    request: Request,
+    workspace_id: str,
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
+) -> dict[str, object]:
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.RETRIEVAL_READ,
+    )
     return await get_slack_services(request).health.workspace_health(workspace_id)

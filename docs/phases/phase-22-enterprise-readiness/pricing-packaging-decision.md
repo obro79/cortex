@@ -2,8 +2,8 @@
 
 ## Decision
 
-Use invite-only beta packaging until checkout, webhook, billing portal, and
-customer-facing plan management are complete.
+Use invite-only beta packaging until checkout, webhook, billing portal, staging
+evidence, and customer-facing plan management are complete.
 
 ## Beta Package
 
@@ -17,10 +17,11 @@ customer-facing plan management are complete.
 
 The product needs more evidence before broad self-serve pricing:
 
-- Stripe integration is not complete.
+- Stripe production activation is not complete.
 - Full onboarding is not complete.
-- Enterprise RBAC is only partially wired into public routes.
-- Data lifecycle execution needs repository-level workers.
+- Remaining public admin routes still need audit coverage beyond hardened
+  connector routes.
+- Data lifecycle execution needs production API/worker queueing and drills.
 - Production drills need staging evidence.
 
 ## Revisit Trigger

@@ -10,6 +10,12 @@ from cortex.api.routes.linear import router as linear_router
 from cortex.api.routes.repo_docs import router as repo_docs_router
 from cortex.api.routes.slack import router as slack_router
 from cortex.api.routes.ui import router as ui_router
+from cortex.billing import (
+    AsyncPlanEnforcementService,
+    InMemoryBillingRepository,
+    PlanEnforcementService,
+    SqlAlchemyBillingRepository,
+)
 from cortex.config import Settings, get_settings
 from cortex.connectors.github.client import RealGitHubClient
 from cortex.connectors.github.service import GitHubConnectorServices
@@ -42,6 +48,21 @@ def create_app(
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    session_factory = (
+        create_sessionmaker(resolved.database_url)
+        if resolved.cortex_state_backend == "sql"
+        else None
+    )
+    if session_factory is not None:
+        app.state.billing_repository = SqlAlchemyBillingRepository(session_factory)
+        app.state.plan_enforcement = AsyncPlanEnforcementService(
+            app.state.billing_repository
+        )
+    else:
+        app.state.billing_repository = InMemoryBillingRepository()
+        app.state.plan_enforcement = PlanEnforcementService(
+            app.state.billing_repository
+        )
     if resolved.cortex_public_auth_enabled:
         app.state.tenant_repository = InMemoryTenantRepository()
     cache = ephemeral_cache
@@ -88,12 +109,12 @@ def create_app(
     event_bus: EventBus | None = None
     payload_store: PayloadStore | None = None
     ingestion_service: Any | None = None
-    session_factory = None
     auto_drain_pipeline = True
     if resolved.cortex_event_bus == "kafka":
         if resolved.cortex_state_backend != "sql":
             raise ValueError("CORTEX_EVENT_BUS=kafka requires CORTEX_STATE_BACKEND=sql")
-        session_factory = create_sessionmaker(resolved.database_url)
+        if session_factory is None:
+            raise ValueError("CORTEX_STATE_BACKEND=sql requires a session factory")
         event_bus = KafkaEventBus(
             bootstrap_servers=resolved.kafka_bootstrap_servers,
         )

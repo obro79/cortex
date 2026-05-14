@@ -217,6 +217,6 @@ def _event_kind(event: dict[str, Any]) -> str:
 
 def _valid_signature(body: bytes, signature: str, secret: str) -> bool:
     if not secret:
-        return True
+        return False
     expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)

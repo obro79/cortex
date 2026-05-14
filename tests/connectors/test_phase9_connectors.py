@@ -140,6 +140,22 @@ async def test_github_webhook_verifies_signature_and_persists_json_payload() -> 
     assert services.payload_store.get(raw_event.payload_ref).startswith(b"{")
 
 
+async def test_github_webhook_rejects_when_secret_is_not_configured() -> None:
+    services = GitHubConnectorServices(app_configured=True)
+    body = json.dumps({"repository": {"id": 44}}, separators=(",", ":")).encode()
+
+    result = await services.webhook(
+        workspace_id="ws_1",
+        source_connection_id="src_github",
+        body=body,
+        signature="",
+        event_name="pull_request",
+        delivery_id="delivery_1",
+    )
+
+    assert result == {"ok": False, "status": "invalid_signature"}
+
+
 async def test_repo_docs_import_hashes_and_skips_unchanged_docs() -> None:
     services = RepoDocsConnectorServices()
     services.select_roots(workspace_id="ws_1", roots=[{"path": "docs"}])

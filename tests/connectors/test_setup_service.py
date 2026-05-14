@@ -28,9 +28,9 @@ def test_connector_overview_normalizes_health_and_data_read_explanations() -> No
     assert providers["github"]["health"]["auth_status"] == "active"
     assert providers["github"]["health"]["selected_source_count"] == 1
     assert providers["github"]["can_admin"] is True
-    assert "Selected repository issues" in providers["github"][
-        "data_read_explanation"
-    ][0]
+    assert (
+        "Selected repository issues" in providers["github"]["data_read_explanation"][0]
+    )
     assert providers["linear"]["health"]["auth_status"] == "missing_token"
     assert providers["repo_docs"]["health"]["selected_root_count"] == 1
 

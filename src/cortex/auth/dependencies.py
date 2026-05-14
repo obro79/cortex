@@ -5,18 +5,26 @@ import secrets
 from fastapi import HTTPException, Request, status
 
 from cortex.auth.provider import LocalAuthProvider
+from cortex.billing import (
+    AsyncPlanEnforcementService,
+    PlanEnforcementService,
+    UsageDimension,
+)
 from cortex.config import Settings
 from cortex.tenancy import InMemoryTenantRepository, TenantContext, TenantRepository
+from cortex.tenancy.rbac import Permission, RolePermissionService
 from cortex.ui.auth import (
     ACTOR_ID_HEADER,
     ROLES_HEADER,
     TRACE_ID_HEADER,
     WORKSPACE_ID_HEADER,
 )
+from cortex.utils.asyncio import maybe_await
 
 AUTH_EMAIL_HEADER = "x-cortex-auth-email"
 AUTH_DISPLAY_NAME_HEADER = "x-cortex-auth-display-name"
 SESSION_ID_HEADER = "x-cortex-public-session-id"
+_PERMISSIONS = RolePermissionService()
 
 
 def require_tenant_context(request: Request) -> TenantContext:
@@ -61,6 +69,66 @@ def require_tenant_context(request: Request) -> TenantContext:
     return context
 
 
+def require_workspace_context(
+    context: TenantContext,
+    *,
+    workspace_id: str,
+) -> None:
+    if context.workspace_id != workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="workspace access denied",
+        )
+
+
+def require_permission(
+    context: TenantContext,
+    *,
+    workspace_id: str,
+    permission: Permission,
+    approval_granted: bool = False,
+) -> None:
+    require_workspace_context(context, workspace_id=workspace_id)
+    decision = _PERMISSIONS.decide(
+        role=context.role,
+        permission=permission,
+        approval_granted=approval_granted,
+    )
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=decision.reason,
+        )
+
+
+async def enforce_plan_limit(
+    request: Request,
+    context: TenantContext,
+    *,
+    dimension: UsageDimension,
+    requested_quantity: int = 1,
+) -> None:
+    service = _plan_enforcement(request)
+    decision = await maybe_await(
+        service.enforce(
+            organization_id=context.organization_id,
+            dimension=dimension,
+            requested_quantity=requested_quantity,
+        )
+    )
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "reason": decision.reason,
+                "dimension": decision.dimension.value,
+                "current_quantity": decision.current_quantity,
+                "requested_quantity": decision.requested_quantity,
+                "limit": decision.limit,
+            },
+        )
+
+
 def _settings(request: Request) -> Settings:
     settings = getattr(request.app.state, "settings", None)
     if not isinstance(settings, Settings):
@@ -74,6 +142,15 @@ def _tenant_repository(request: Request) -> TenantRepository:
         repository = InMemoryTenantRepository()
         request.app.state.tenant_repository = repository
     return repository
+
+
+def _plan_enforcement(
+    request: Request,
+) -> PlanEnforcementService | AsyncPlanEnforcementService:
+    service = getattr(request.app.state, "plan_enforcement", None)
+    if not isinstance(service, (PlanEnforcementService, AsyncPlanEnforcementService)):
+        raise RuntimeError("plan enforcement service is not configured")
+    return service
 
 
 def _required_header(request: Request, name: str) -> str:

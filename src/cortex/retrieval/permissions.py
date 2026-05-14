@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cortex.permissions.provider_acls import ProviderAclPrincipal
 from cortex.permissions.service import PermissionService
 
 from .candidates import Candidate
@@ -12,9 +13,11 @@ class PermissionFilter:
         *,
         workspace_id: str | None = None,
         service: PermissionService | None = None,
+        caller_principals: list[ProviderAclPrincipal] | None = None,
     ) -> None:
         self.workspace_id = workspace_id
         self.service = service
+        self.caller_principals = caller_principals
 
     def filter(
         self, candidates: list[Candidate], plan: QueryPlan
@@ -29,6 +32,7 @@ class PermissionFilter:
                 workspace_id=self.workspace_id,
                 candidates=candidates,
                 source_object_allowlist=plan.source_allowlist,
+                caller_principals=self.caller_principals,
             )
             return result.candidates, result.exclusions
         if not plan.source_allowlist:

@@ -303,9 +303,7 @@ class InMemoryTenantRepository:
                 return user
         return None
 
-    def _active_membership(
-        self, user_id: str, workspace_id: str
-    ) -> Membership | None:
+    def _active_membership(self, user_id: str, workspace_id: str) -> Membership | None:
         for membership in self.memberships.values():
             if (
                 membership.user_id == user_id

@@ -21,6 +21,8 @@ class PayloadStore(Protocol):
 
     def get(self, payload_ref: str) -> bytes: ...
 
+    def delete(self, payload_ref: str) -> bool: ...
+
 
 def canonical_json_bytes(payload: Any) -> bytes:
     return json.dumps(
@@ -67,6 +69,9 @@ class InMemoryPayloadStore:
         except KeyError as error:
             raise PayloadNotFoundError(payload_ref) from error
 
+    def delete(self, payload_ref: str) -> bool:
+        return self._payloads.pop(payload_ref, None) is not None
+
 
 class FilePayloadStore:
     def __init__(self, root: str | Path) -> None:
@@ -100,6 +105,13 @@ class FilePayloadStore:
         if not path.exists():
             raise PayloadNotFoundError(payload_ref)
         return path.read_bytes()
+
+    def delete(self, payload_ref: str) -> bool:
+        path = self._path_for_ref(payload_ref)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
 
     def _path_for_ref(self, payload_ref: str) -> Path:
         prefix = "file://payloads/"

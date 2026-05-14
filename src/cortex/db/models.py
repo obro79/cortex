@@ -688,6 +688,318 @@ class ContextGateResultRecord(Base):
     )
 
 
+class RetentionPolicyRecord(Base):
+    __tablename__ = "retention_policies"
+    __table_args__ = (Index("ix_retention_policies_workspace", "workspace_id"),)
+
+    workspace_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    raw_event_days: Mapped[int | None] = mapped_column(Integer)
+    payload_days: Mapped[int | None] = mapped_column(Integer)
+    audit_log_days: Mapped[int | None] = mapped_column(Integer)
+    tombstone_days: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DeletionTombstoneRecord(Base):
+    __tablename__ = "deletion_tombstones"
+    __table_args__ = (
+        Index(
+            "ix_deletion_tombstones_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+        Index(
+            "ix_deletion_tombstones_workspace_target",
+            "workspace_id",
+            "target_type",
+            "target_id_hash",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_id_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_by_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExportJobRecord(Base):
+    __tablename__ = "export_jobs"
+    __table_args__ = (
+        Index("ix_export_jobs_workspace_status", "workspace_id", "status"),
+        Index("ix_export_jobs_workspace_created", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    requested_by_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    export_scope: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_ref: Mapped[str | None] = mapped_column(String(512))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BillingCustomerRecord(Base):
+    __tablename__ = "billing_customers"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "provider",
+            name="uq_billing_customers_organization_provider",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_customer_id",
+            name="uq_billing_customers_provider_customer",
+        ),
+        Index("ix_billing_customers_organization_status", "organization_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_customer_id: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class BillingSubscriptionRecord(Base):
+    __tablename__ = "billing_subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_subscription_id",
+            name="uq_billing_subscriptions_provider_subscription",
+        ),
+        Index(
+            "ix_billing_subscriptions_organization_status",
+            "organization_id",
+            "status",
+        ),
+        Index(
+            "ix_billing_subscriptions_customer",
+            "billing_customer_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    billing_customer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(256))
+    plan_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    current_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trial_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trial_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    grace_period_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    provider_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class BillingUsageMeterRecord(Base):
+    __tablename__ = "billing_usage_meters"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "dimension",
+            "period_key",
+            name="uq_billing_usage_meters_period",
+        ),
+        Index(
+            "ix_billing_usage_meters_organization_dimension",
+            "organization_id",
+            "dimension",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(64), nullable=False)
+    period_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class BillingUsageEventRecord(Base):
+    __tablename__ = "billing_usage_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_billing_usage_events_idempotency",
+        ),
+        Index(
+            "ix_billing_usage_events_organization_dimension",
+            "organization_id",
+            "dimension",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(64), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(256))
+    period_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class BillingWebhookEventRecord(Base):
+    __tablename__ = "billing_webhook_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_event_id",
+            name="uq_billing_webhook_events_provider_event",
+        ),
+        Index("ix_billing_webhook_events_status", "provider", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_event_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(256), nullable=False)
+    object_id: Mapped[str | None] = mapped_column(String(256))
+    signature_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    api_version: Mapped[str | None] = mapped_column(String(64))
+    livemode: Mapped[str | None] = mapped_column(String(16))
+    last_error_code: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+
+
+class ProviderAclSnapshotRecord(Base):
+    __tablename__ = "provider_acl_snapshots"
+    __table_args__ = (
+        Index(
+            "ix_provider_acl_snapshots_current",
+            "workspace_id",
+            "provider",
+            "resource_type",
+            "resource_id_hash",
+            "is_current",
+        ),
+        Index("ix_provider_acl_snapshots_expires", "workspace_id", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    resource_id_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_connection_id: Mapped[str | None] = mapped_column(String(128))
+    snapshot_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_current: Mapped[bool] = mapped_column(nullable=False, default=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ProviderAclEntryRecord(Base):
+    __tablename__ = "provider_acl_entries"
+    __table_args__ = (
+        Index("ix_provider_acl_entries_snapshot", "snapshot_id"),
+        Index(
+            "ix_provider_acl_entries_principal",
+            "workspace_id",
+            "provider",
+            "principal_type",
+            "principal_id_hash",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    resource_id_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    principal_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    principal_id_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    permission: Mapped[str] = mapped_column(String(64), nullable=False)
+    effect: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class CanonicalDecisionRecord(Base):
     __tablename__ = "canonical_decisions"
     __table_args__ = (

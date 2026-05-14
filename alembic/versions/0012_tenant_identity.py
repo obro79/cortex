@@ -166,9 +166,7 @@ def upgrade() -> None:
         "invitations",
         ["workspace_id", "status"],
     )
-    op.create_index(
-        "ix_invitations_email_status", "invitations", ["email", "status"]
-    )
+    op.create_index("ix_invitations_email_status", "invitations", ["email", "status"])
 
     op.create_table(
         "legal_consents",

@@ -9,6 +9,7 @@ from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
 from cortex.indexing.vector_memory import InMemoryVectorIndex
 from cortex.normalization.repositories import InMemoryRelationshipSeedRepository
+from cortex.permissions.provider_acls import ProviderAclPrincipal
 from cortex.permissions.service import PermissionService
 
 from .candidates import Candidate
@@ -78,6 +79,7 @@ class RetrievalService:
         query: str,
         source_allowlist: list[str] | None = None,
         provider_filters: list[str] | None = None,
+        caller_principals: list[ProviderAclPrincipal] | None = None,
     ) -> RetrievalServiceResponse:
         plan = self.planner.plan(
             query=query,
@@ -90,6 +92,7 @@ class RetrievalService:
             filters_json={
                 "provider_filters": plan.provider_filters,
                 "source_allowlist": plan.source_allowlist,
+                "caller_principal_count": len(caller_principals or []),
             },
             source_allowlist_snapshot_hash=plan.source_allowlist_snapshot_hash,
         )
@@ -128,7 +131,9 @@ class RetrievalService:
         candidates.extend(self._hint_candidates(workspace_id, plan))
 
         permission_filter = PermissionFilter(
-            workspace_id=workspace_id, service=self.permission_service
+            workspace_id=workspace_id,
+            service=self.permission_service,
+            caller_principals=caller_principals,
         )
         allowed, exclusions = permission_filter.filter(candidates, plan)
         expanded = self._expand_relationships(workspace_id, allowed)

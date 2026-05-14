@@ -1,4 +1,5 @@
 """Provider connector boundary."""
+
 from cortex.connectors.setup import (
     ConnectorActionResult,
     ConnectorSetupProvider,

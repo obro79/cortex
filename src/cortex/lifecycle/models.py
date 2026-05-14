@@ -52,6 +52,12 @@ class ExportJob:
 
 
 @dataclass(frozen=True)
+class LifecycleExportResult:
+    destination_ref: str
+    metadata_json: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RetentionSweepPlan:
     workspace_id: str
     raw_events_before: datetime | None
