@@ -37,6 +37,16 @@ Required Cortex settings:
 8. Replay the same webhook event and verify it is marked duplicate without
    mutating subscription state again.
 
+Local no-secret preflight:
+
+```bash
+uv run python scripts/stripe_activation_smoke.py --static --fake-gateway
+```
+
+This validates the runbook contract, checkout/portal request shape, signature
+verification, and duplicate webhook replay without contacting Stripe. It does
+not replace staging or live Stripe evidence.
+
 ## Evidence To Record
 
 Record only safe fields:

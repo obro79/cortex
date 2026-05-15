@@ -26,8 +26,8 @@ Current status: invite-only beta, not broad self-serve enterprise rollout.
   deletion/export executor foundations. SQL lifecycle persistence, async service
   wiring, API queue routes, a lifecycle worker role, and Qdrant deletion wiring
   are present, but staging deletion/export drill evidence remains incomplete.
-- Operations: Phase 21 production operations runbook evidence; staging drills
-  still need real results.
+- Operations: Phase 21 production operations runbook evidence plus no-secret
+  backend ops launch gate tooling; staging drills still need real results.
 
 ## Security Review Checklist
 
@@ -50,6 +50,6 @@ Current status: invite-only beta, not broad self-serve enterprise rollout.
   route before enabling it.
 - Run staged deletion/export lifecycle drills against SQL, payload storage, and
   Qdrant.
-- Schedule provider-native ACL snapshot ingestion from live providers and prove
-  freshness alerting in staging.
+- Deploy scheduled provider-native ACL snapshot ingestion from live providers
+  using the `provider-acl` worker and prove freshness alerting in staging.
 - Run staging restore, rollback, load, and cost drills.

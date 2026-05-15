@@ -11,6 +11,7 @@ from cortex.lifecycle.models import (
 from cortex.lifecycle.service import (
     LifecycleDeletionExecutor,
     LifecycleExportExecutor,
+    LifecycleLeaseUnavailable,
     LifecycleService,
 )
 from cortex.utils.asyncio import maybe_await
@@ -99,13 +100,16 @@ class LifecycleQueueWorker:
             self.repository.list_tombstones(status=LifecycleActionStatus.REQUESTED)
         )
         for tombstone in tombstones[: self.batch_size]:
-            leased = await maybe_await(
-                self.repository.lease_deletion_tombstone(
-                    tombstone_id=tombstone.id,
-                    worker_id=self.worker_id,
-                    lease_expires_at=now + timedelta(seconds=self.lease_seconds),
+            try:
+                leased = await maybe_await(
+                    self.repository.lease_deletion_tombstone(
+                        tombstone_id=tombstone.id,
+                        worker_id=self.worker_id,
+                        lease_expires_at=now + timedelta(seconds=self.lease_seconds),
+                    )
                 )
-            )
+            except LifecycleLeaseUnavailable:
+                continue
             counts.leased += 1
             target_id = leased.metadata_json.get("target_id_ref")
             if not isinstance(target_id, str) or not target_id:
@@ -157,13 +161,16 @@ class LifecycleQueueWorker:
             self.repository.list_export_jobs(status=LifecycleActionStatus.REQUESTED)
         )
         for job in jobs[: self.batch_size]:
-            leased = await maybe_await(
-                self.repository.lease_export_job(
-                    job_id=job.id,
-                    worker_id=self.worker_id,
-                    lease_expires_at=now + timedelta(seconds=self.lease_seconds),
+            try:
+                leased = await maybe_await(
+                    self.repository.lease_export_job(
+                        job_id=job.id,
+                        worker_id=self.worker_id,
+                        lease_expires_at=now + timedelta(seconds=self.lease_seconds),
+                    )
                 )
-            )
+            except LifecycleLeaseUnavailable:
+                continue
             counts.leased += 1
             try:
                 await self.service.execute_export_job(

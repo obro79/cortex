@@ -26,6 +26,10 @@ from cortex.lifecycle.models import (
 from cortex.security.audit import InMemoryAuditLogRepository
 
 
+class LifecycleLeaseUnavailable(RuntimeError):
+    pass
+
+
 class InMemoryLifecycleRepository:
     def __init__(self) -> None:
         self.retention_policies: dict[str, RetentionPolicy] = {}
@@ -110,6 +114,8 @@ class InMemoryLifecycleRepository:
         lease_expires_at: datetime,
     ) -> DeletionTombstone:
         tombstone = self.deletion_tombstones[tombstone_id]
+        if tombstone.status != LifecycleActionStatus.REQUESTED:
+            raise LifecycleLeaseUnavailable("deletion_tombstone_not_leaseable")
         leased = replace(
             tombstone,
             status=LifecycleActionStatus.RUNNING,
@@ -204,6 +210,8 @@ class InMemoryLifecycleRepository:
         lease_expires_at: datetime,
     ) -> ExportJob:
         job = self.export_jobs[job_id]
+        if job.status != LifecycleActionStatus.REQUESTED:
+            raise LifecycleLeaseUnavailable("export_job_not_leaseable")
         leased = replace(
             job,
             status=LifecycleActionStatus.RUNNING,
@@ -434,7 +442,9 @@ class SqlAlchemyLifecycleRepository:
         worker_id: str,
         lease_expires_at: datetime,
     ) -> DeletionTombstone:
-        record = await self._deletion_tombstone_record(tombstone_id)
+        record = await self._deletion_tombstone_record_for_update(tombstone_id)
+        if record.status != LifecycleActionStatus.REQUESTED.value:
+            raise LifecycleLeaseUnavailable("deletion_tombstone_not_leaseable")
         record.status = LifecycleActionStatus.RUNNING.value
         record.metadata_json = {
             **record.metadata_json,
@@ -483,7 +493,9 @@ class SqlAlchemyLifecycleRepository:
         worker_id: str,
         lease_expires_at: datetime,
     ) -> ExportJob:
-        record = await self._export_job_record(job_id)
+        record = await self._export_job_record_for_update(job_id)
+        if record.status != LifecycleActionStatus.REQUESTED.value:
+            raise LifecycleLeaseUnavailable("export_job_not_leaseable")
         record.status = LifecycleActionStatus.RUNNING.value
         record.metadata_json = {
             **record.metadata_json,
@@ -512,8 +524,32 @@ class SqlAlchemyLifecycleRepository:
             raise KeyError(tombstone_id)
         return record
 
+    async def _deletion_tombstone_record_for_update(
+        self, tombstone_id: str
+    ) -> DeletionTombstoneRecord:
+        result = await self.session.execute(
+            select(DeletionTombstoneRecord)
+            .where(DeletionTombstoneRecord.id == tombstone_id)
+            .with_for_update()
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            raise KeyError(tombstone_id)
+        return record
+
     async def _export_job_record(self, job_id: str) -> ExportJobRecord:
         record = await self.session.get(ExportJobRecord, job_id)
+        if record is None:
+            raise KeyError(job_id)
+        return record
+
+    async def _export_job_record_for_update(self, job_id: str) -> ExportJobRecord:
+        result = await self.session.execute(
+            select(ExportJobRecord)
+            .where(ExportJobRecord.id == job_id)
+            .with_for_update()
+        )
+        record = result.scalar_one_or_none()
         if record is None:
             raise KeyError(job_id)
         return record

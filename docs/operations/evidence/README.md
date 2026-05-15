@@ -16,3 +16,12 @@ Evidence entries must state:
 
 Do not record production customer data, raw provider payloads, tokens, private
 URLs, or unredacted object identifiers.
+
+Local no-secret gate evidence can be generated with:
+
+```bash
+uv run python scripts/backend_ops_launch_gate.py --evidence docs/operations/evidence/<date>-backend-ops-launch-gate-local-evidence.md
+```
+
+Local gate evidence must keep the `not staging evidence` marker unless the
+commands were run against deployed staging or production systems.

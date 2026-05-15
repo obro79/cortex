@@ -133,7 +133,7 @@ async def test_duplicate_slack_event_replay_does_not_create_duplicate_chunks() -
 
 async def _persist_selected_message(services: object):
     body = {
-        "team_id": "T123",
+        "team_id": "T_TEST",
         "event_id": "EvPhase85",
         "event_time": 1_700_000_000,
         "event": {

@@ -9,6 +9,8 @@ This runbook defines the minimum hosted beta operating model for Cortex.
   embedding, and downstream pipeline events.
 - `worker-lifecycle`: queued deletion/export worker for lifecycle compliance
   jobs.
+- `worker-provider-acl`: scheduled provider ACL snapshot refresh and freshness
+  reporting worker.
 - `migrate`: explicit one-shot Alembic migration job.
 - Postgres: source of truth for tenant, connector, audit, job, retrieval, and
   billing/lifecycle state.
@@ -35,8 +37,10 @@ Deploy order:
 3. Deploy `api`.
 4. Deploy `worker-pipeline`.
 5. Deploy `worker-lifecycle` when lifecycle queueing is enabled.
-6. Verify readiness, worker logs, Kafka topic access, lifecycle queue drain, and
-   connector smoke.
+6. Deploy `worker-provider-acl` on a schedule or worker cron after provider ACL
+   refresh targets and token env vars are configured.
+7. Verify readiness, worker logs, Kafka topic access, lifecycle queue drain,
+   provider ACL freshness, and connector smoke.
 
 ## Migration Strategy
 
@@ -79,6 +83,13 @@ Support diagnostics must not include:
 - unredacted customer object IDs when a hash is sufficient.
 
 ## Load And Cost Tests
+
+No-secret local gate:
+
+- `uv run python scripts/backend_ops_launch_gate.py --list` prints the backend
+  and operations checks that can run without live secrets.
+- `uv run python scripts/backend_ops_launch_gate.py --evidence docs/operations/evidence/<date>-backend-ops-launch-gate-local-evidence.md`
+  records local-only evidence. This does not replace staging drill evidence.
 
 Beta load test:
 

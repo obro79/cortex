@@ -8,6 +8,7 @@ from cortex.lifecycle import (
     InMemoryLifecycleRepository,
     LifecycleActionStatus,
     LifecycleExportResult,
+    LifecycleLeaseUnavailable,
     LifecycleQueueWorker,
     LifecycleService,
 )
@@ -148,3 +149,28 @@ async def test_lifecycle_queue_retries_executor_failures_and_stale_leases() -> N
     assert retried.status == LifecycleActionStatus.REQUESTED
     assert retried.metadata_json["last_error_code"] == "executor_failed"
     assert "lease_owner_id" not in retried.metadata_json
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_repository_rejects_terminal_record_leases() -> None:
+    repository = InMemoryLifecycleRepository()
+    service = LifecycleService(repository)
+    tombstone = await service.request_deletion(
+        workspace_id="ws_1",
+        target_type="source_connection",
+        target_id="src_1",
+        requested_by_user_id="usr_1",
+        reason="customer_request",
+        queue_execution=True,
+    )
+    repository.complete_deletion_tombstone(
+        tombstone_id=tombstone.id,
+        deleted_counts_json={"raw_events": 1},
+    )
+
+    with pytest.raises(LifecycleLeaseUnavailable):
+        repository.lease_deletion_tombstone(
+            tombstone_id=tombstone.id,
+            worker_id="worker_1",
+            lease_expires_at=datetime(2026, 5, 14, tzinfo=UTC),
+        )

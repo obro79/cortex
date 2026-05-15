@@ -20,6 +20,14 @@ def smoke_commands(*, build: bool, full: bool) -> list[SmokeCommand]:
             "compose migrate config",
             ("docker", "compose", "--profile", "migrate", "config"),
         ),
+        SmokeCommand(
+            "compose lifecycle config",
+            ("docker", "compose", "--profile", "lifecycle", "config"),
+        ),
+        SmokeCommand(
+            "compose provider-acl config",
+            ("docker", "compose", "--profile", "provider-acl", "config"),
+        ),
     ]
     if build:
         commands.append(

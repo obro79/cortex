@@ -163,6 +163,35 @@ def test_slack_webhook_rejects_invalid_signature() -> None:
     assert response.status_code == 401
 
 
+def test_slack_webhook_ignores_unmapped_team_without_raw_event() -> None:
+    app, auth_headers = installed_client()
+    body = {
+        "event_id": "Ev999",
+        "context_team_id": "T_UNKNOWN",
+        "event_time": 1_700_000_000,
+        "event": {
+            "type": "message",
+            "channel": "C123",
+            "ts": "1700000000.000999",
+            "text": "should not persist",
+        },
+    }
+    headers = signed_headers(body, "test-secret")
+
+    response = app.post(
+        "/connectors/slack/events",
+        params={"workspace_id": auth_headers[WORKSPACE_ID_HEADER]},
+        content=json.dumps(body, separators=(",", ":")),
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ignored_unmapped_team"
+    assert response.json()["raw_event_created"] is False
+    services = app.app.state.slack_connector
+    assert services.raw_events.list_all() == []
+
+
 def test_slack_health_route_is_content_free() -> None:
     app, headers = installed_client()
 
