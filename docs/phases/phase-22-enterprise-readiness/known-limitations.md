@@ -19,9 +19,9 @@ Cortex is suitable for invite-only beta workspaces with guided setup. It is not 
   disabled outside local/test environments.
 - Retrieval permission behavior now supports provider-native ACL snapshots for
   Slack, GitHub, and Linear protected chunks. Snapshot ingestion collectors,
-  hashed user-principal mapping, and freshness reporting exist, but scheduled
-  production ingestion and staging freshness drills are not complete, so full
-  provider ACL parity is not claimed.
+  hashed user-principal mapping, freshness reporting, and a SQL worker entrypoint
+  exist, but deployed scheduled ingestion and staging freshness drills are not
+  complete, so full provider ACL parity is not claimed.
 - Data export and deletion have lifecycle job models, SQL persistence tables,
   API request/status/lease/execute/retry routes, a SQL worker role, and
   repository-backed executors with fail-closed cleanup validation. Staging

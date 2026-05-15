@@ -96,6 +96,8 @@ class SlackWebhookService:
             if slack_team_id
             else None
         )
+        if slack_team_id and installation is None:
+            return SlackWebhookResult(ok=True, status="ignored_unmapped_team")
         resolved_workspace_id = (
             installation.workspace_id if installation else workspace_id
         )

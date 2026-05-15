@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -35,6 +35,22 @@ class ProviderAclSnapshotRepository(Protocol):
         workspace_id: str,
         resource: ProviderAclResourceRef,
     ) -> ProviderAclSnapshot | None | Awaitable[ProviderAclSnapshot | None]: ...
+
+
+class ProviderPrincipalMappingWriter(Protocol):
+    def upsert_mapping(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        provider: str,
+        principal_type: str,
+        external_id: str,
+        match_method: str,
+        last_verified_at: datetime | None = None,
+        expires_at: datetime | None = None,
+        metadata_json: dict[str, object] | None = None,
+    ) -> object | Awaitable[object]: ...
 
 
 class SlackAclClient(Protocol):
@@ -84,6 +100,58 @@ class ProviderAclFreshnessReport:
     stale_count: int = 0
     missing_count: int = 0
     alerts: tuple[dict[str, object], ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class ProviderAclRefreshTarget:
+    workspace_id: str
+    provider: str
+    resource_type: str
+    external_id: str
+    token_env: str
+    source_connection_id: str | None = None
+    owner: str | None = None
+    repo: str | None = None
+
+    def freshness_resource(self) -> ProviderAclFreshnessResource:
+        if self.provider == "slack" and self.resource_type == "slack_channel":
+            resource = slack_channel_resource(self.external_id)
+        elif self.provider == "github" and self.resource_type == "github_repository":
+            resource = github_repository_resource(self.external_id)
+        elif self.provider == "linear" and self.resource_type == "linear_team":
+            resource = linear_team_resource(self.external_id)
+        else:
+            resource = ProviderAclResourceRef(
+                provider=self.provider,
+                resource_type=self.resource_type,
+                external_id_hash=sha256_digest(self.external_id.encode()),
+            )
+        return ProviderAclFreshnessResource(
+            workspace_id=self.workspace_id,
+            resource=resource,
+        )
+
+
+@dataclass(frozen=True)
+class ProviderPrincipalMappingInput:
+    workspace_id: str
+    user_id: str
+    provider: str
+    principal_type: str
+    external_id: str
+    match_method: str = "admin_configured"
+
+
+@dataclass(frozen=True)
+class ProviderAclRefreshResult:
+    resources_attempted: int = 0
+    resources_refreshed: int = 0
+    principal_entries_refreshed: int = 0
+    mappings_upserted: int = 0
+    failures: tuple[dict[str, object], ...] = field(default_factory=tuple)
+    freshness_report: ProviderAclFreshnessReport = field(
+        default_factory=ProviderAclFreshnessReport
+    )
 
 
 class ProviderAclIngestionService:
@@ -294,6 +362,106 @@ class ProviderAclProviderCollector:
         )
 
 
+class ProviderAclRefreshService:
+    def __init__(
+        self,
+        collector: ProviderAclProviderCollector,
+        freshness: ProviderAclFreshnessService,
+        *,
+        principal_mappings: ProviderPrincipalMappingWriter | None = None,
+        token_resolver: Callable[[ProviderAclRefreshTarget], str | None],
+    ) -> None:
+        self.collector = collector
+        self.freshness = freshness
+        self.principal_mappings = principal_mappings
+        self.token_resolver = token_resolver
+
+    async def refresh(
+        self,
+        *,
+        targets: Sequence[ProviderAclRefreshTarget],
+        principal_mappings: Sequence[ProviderPrincipalMappingInput] = (),
+        now: datetime | None = None,
+    ) -> ProviderAclRefreshResult:
+        mappings_upserted = 0
+        if self.principal_mappings is not None:
+            current = now or datetime.now(UTC)
+            for mapping in principal_mappings:
+                await maybe_await(
+                    self.principal_mappings.upsert_mapping(
+                        workspace_id=mapping.workspace_id,
+                        user_id=mapping.user_id,
+                        provider=mapping.provider,
+                        principal_type=mapping.principal_type,
+                        external_id=mapping.external_id,
+                        match_method=mapping.match_method,
+                        last_verified_at=current,
+                    )
+                )
+                mappings_upserted += 1
+
+        refreshed = 0
+        principal_entries = 0
+        failures: list[dict[str, object]] = []
+        for target in targets:
+            access_token = self.token_resolver(target)
+            if not access_token:
+                failures.append(_refresh_failure(target, "token_missing"))
+                continue
+            try:
+                result = await self._collect_target(target, access_token)
+            except Exception as exc:
+                failures.append(_refresh_failure(target, type(exc).__name__))
+                continue
+            refreshed += 1
+            principal_entries += result.principal_count
+
+        freshness_report = await self.freshness.check_resources(
+            [target.freshness_resource() for target in targets],
+            now=now,
+        )
+        return ProviderAclRefreshResult(
+            resources_attempted=len(targets),
+            resources_refreshed=refreshed,
+            principal_entries_refreshed=principal_entries,
+            mappings_upserted=mappings_upserted,
+            failures=tuple(failures),
+            freshness_report=freshness_report,
+        )
+
+    async def _collect_target(
+        self,
+        target: ProviderAclRefreshTarget,
+        access_token: str,
+    ) -> ProviderAclIngestionResult:
+        if target.provider == "slack" and target.resource_type == "slack_channel":
+            return await self.collector.collect_slack_channel(
+                workspace_id=target.workspace_id,
+                access_token=access_token,
+                channel_id=target.external_id,
+                source_connection_id=target.source_connection_id,
+            )
+        if target.provider == "github" and target.resource_type == "github_repository":
+            if not target.owner or not target.repo:
+                raise ValueError("github_repository target requires owner and repo")
+            return await self.collector.collect_github_repository(
+                workspace_id=target.workspace_id,
+                access_token=access_token,
+                owner=target.owner,
+                repo=target.repo,
+                repository_id=target.external_id,
+                source_connection_id=target.source_connection_id,
+            )
+        if target.provider == "linear" and target.resource_type == "linear_team":
+            return await self.collector.collect_linear_team(
+                workspace_id=target.workspace_id,
+                api_token=access_token,
+                team_id=target.external_id,
+                source_connection_id=target.source_connection_id,
+            )
+        raise ValueError("unsupported provider ACL refresh target")
+
+
 class ProviderAclFreshnessService:
     def __init__(
         self,
@@ -405,3 +573,15 @@ def _freshness_status(
     if snapshot.expires_at <= now + expiring_soon_window:
         return "expiring_soon"
     return "current"
+
+
+def _refresh_failure(
+    target: ProviderAclRefreshTarget,
+    error_code: str,
+) -> dict[str, object]:
+    return {
+        "workspace_id": target.workspace_id,
+        "provider": target.provider,
+        "resource_type": target.resource_type,
+        "error_code": error_code,
+    }

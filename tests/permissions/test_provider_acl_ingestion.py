@@ -13,6 +13,9 @@ from cortex.permissions import (
     ProviderAclIngestionService,
     ProviderAclPrincipal,
     ProviderAclProviderCollector,
+    ProviderAclRefreshService,
+    ProviderAclRefreshTarget,
+    ProviderPrincipalMappingInput,
 )
 from cortex.permissions.provider_acl_ingestion import (
     github_repository_resource,
@@ -117,6 +120,123 @@ async def test_provider_acl_collector_pulls_from_provider_clients() -> None:
     assert slack.snapshot.resource == slack_channel_resource("C123")
     assert github.snapshot.resource == github_repository_resource("42")
     assert linear.snapshot.resource == linear_team_resource("team_1")
+
+
+@pytest.mark.asyncio
+async def test_provider_acl_refresh_service_collects_targets_and_mappings() -> None:
+    repository = InMemoryProviderAclRepository()
+    mappings = InMemoryProviderPrincipalMappingRepository()
+    ingestion = ProviderAclIngestionService(repository)
+    collector = ProviderAclProviderCollector(
+        ingestion,
+        slack=FakeSlackAclClient(),
+        github=FakeGitHubAclClient(),
+        linear=FakeLinearAclClient(),
+    )
+    refresh = ProviderAclRefreshService(
+        collector,
+        ProviderAclFreshnessService(repository),
+        principal_mappings=mappings,
+        token_resolver=lambda target: {
+            "SLACK_TOKEN": "xoxb_test",
+            "GITHUB_TOKEN": "ghs_test",
+            "LINEAR_TOKEN": "lin_test",
+        }.get(target.token_env),
+    )
+
+    result = await refresh.refresh(
+        targets=[
+            ProviderAclRefreshTarget(
+                workspace_id="ws_1",
+                provider="slack",
+                resource_type="slack_channel",
+                external_id="C123",
+                token_env="SLACK_TOKEN",
+            ),
+            ProviderAclRefreshTarget(
+                workspace_id="ws_1",
+                provider="github",
+                resource_type="github_repository",
+                external_id="42",
+                token_env="GITHUB_TOKEN",
+                owner="acme",
+                repo="app",
+            ),
+            ProviderAclRefreshTarget(
+                workspace_id="ws_1",
+                provider="linear",
+                resource_type="linear_team",
+                external_id="team_1",
+                token_env="LINEAR_TOKEN",
+            ),
+        ],
+        principal_mappings=[
+            ProviderPrincipalMappingInput(
+                workspace_id="ws_1",
+                user_id="usr_1",
+                provider="slack",
+                principal_type="user",
+                external_id="U1",
+            )
+        ],
+        now=datetime(2026, 5, 14, tzinfo=UTC),
+    )
+
+    assert result.resources_attempted == 3
+    assert result.resources_refreshed == 3
+    assert result.principal_entries_refreshed == 5
+    assert result.mappings_upserted == 1
+    assert result.failures == ()
+    assert result.freshness_report.current_count == 3
+    assert mappings.active_principals(
+        workspace_id="ws_1",
+        user_id="usr_1",
+        now=datetime(2026, 5, 14, tzinfo=UTC),
+    ) == [
+        ProviderAclPrincipal.from_external_id(
+            provider="slack",
+            principal_type="user",
+            external_id="U1",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_provider_acl_refresh_service_reports_safe_failures() -> None:
+    repository = InMemoryProviderAclRepository()
+    ingestion = ProviderAclIngestionService(repository)
+    refresh = ProviderAclRefreshService(
+        ProviderAclProviderCollector(ingestion, slack=FakeSlackAclClient()),
+        ProviderAclFreshnessService(repository),
+        token_resolver=lambda _target: None,
+    )
+
+    result = await refresh.refresh(
+        targets=[
+            ProviderAclRefreshTarget(
+                workspace_id="ws_1",
+                provider="slack",
+                resource_type="slack_channel",
+                external_id="C123",
+                token_env="SLACK_TOKEN",
+            )
+        ],
+        now=datetime(2026, 5, 14, tzinfo=UTC),
+    )
+
+    assert result.resources_attempted == 1
+    assert result.resources_refreshed == 0
+    assert result.failures == (
+        {
+            "workspace_id": "ws_1",
+            "provider": "slack",
+            "resource_type": "slack_channel",
+            "error_code": "token_missing",
+        },
+    )
+    assert result.freshness_report.missing_count == 1
+    assert "C123" not in repr(result)
+    assert "SLACK_TOKEN" not in repr(result)
 
 
 def test_provider_principal_mapping_resolves_active_non_expired_principals() -> None:

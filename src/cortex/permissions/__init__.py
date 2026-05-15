@@ -5,6 +5,10 @@ from cortex.permissions.provider_acl_ingestion import (
     ProviderAclFreshnessService,
     ProviderAclIngestionService,
     ProviderAclProviderCollector,
+    ProviderAclRefreshResult,
+    ProviderAclRefreshService,
+    ProviderAclRefreshTarget,
+    ProviderPrincipalMappingInput,
 )
 from cortex.permissions.provider_acls import (
     InMemoryProviderAclRepository,
@@ -31,9 +35,13 @@ __all__ = [
     "ProviderAclIngestionService",
     "ProviderAclPrincipal",
     "ProviderAclProviderCollector",
+    "ProviderAclRefreshResult",
+    "ProviderAclRefreshService",
+    "ProviderAclRefreshTarget",
     "ProviderAclResourceRef",
     "ProviderAclSnapshot",
     "ProviderPrincipalMapping",
+    "ProviderPrincipalMappingInput",
     "SqlAlchemyProviderAclRepository",
     "SqlAlchemyProviderPrincipalMappingRepository",
 ]

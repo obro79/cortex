@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     cortex_provider_rate_limit_window_seconds: int = Field(
         default=60, alias="CORTEX_PROVIDER_RATE_LIMIT_WINDOW_SECONDS"
     )
+    cortex_provider_acl_refresh_targets_json: str = Field(
+        default="", alias="CORTEX_PROVIDER_ACL_REFRESH_TARGETS_JSON"
+    )
+    cortex_provider_acl_principal_mappings_json: str = Field(
+        default="", alias="CORTEX_PROVIDER_ACL_PRINCIPAL_MAPPINGS_JSON"
+    )
+    cortex_provider_acl_refresh_lease_ttl_seconds: int = Field(
+        default=600, alias="CORTEX_PROVIDER_ACL_REFRESH_LEASE_TTL_SECONDS"
+    )
+    cortex_provider_acl_snapshot_ttl_hours: int = Field(
+        default=24, alias="CORTEX_PROVIDER_ACL_SNAPSHOT_TTL_HOURS"
+    )
     cortex_model_rate_limit_enabled: bool = Field(
         default=False, alias="CORTEX_MODEL_RATE_LIMIT_ENABLED"
     )

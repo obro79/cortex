@@ -33,6 +33,7 @@ class GitHubConnectorServices:
     client: GitHubClient = field(default_factory=EmptyGitHubClient)
     webhook_secret: str = ""
     repo_ids: set[str] = field(default_factory=set)
+    repo_source_connection_ids: dict[str, str] = field(default_factory=dict)
     raw_events: InMemoryRawEventRepository = field(
         default_factory=InMemoryRawEventRepository
     )
@@ -79,6 +80,9 @@ class GitHubConnectorServices:
             repo_id = str(repo.get("id", ""))
             if repo_id:
                 self.repo_ids.add(repo_id)
+                source_connection_id = repo.get("source_connection_id")
+                if isinstance(source_connection_id, str) and source_connection_id:
+                    self.repo_source_connection_ids[repo_id] = source_connection_id
                 selected.append({"id": repo_id})
         return {"ok": True, "workspace_id": workspace_id, "selected": selected}
 
@@ -170,6 +174,12 @@ class GitHubConnectorServices:
         repo_id = _repo_id(payload)
         if self.repo_ids and repo_id not in self.repo_ids:
             return {"ok": True, "status": "ignored_unselected"}
+        expected_source_connection_id = self.repo_source_connection_ids.get(repo_id)
+        if (
+            expected_source_connection_id is not None
+            and expected_source_connection_id != source_connection_id
+        ):
+            return {"ok": True, "status": "ignored_source_mismatch"}
         ingestion = self.ingestion
         assert ingestion is not None
         result = await ingestion.ingest(

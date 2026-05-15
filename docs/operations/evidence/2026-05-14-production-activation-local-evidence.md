@@ -72,9 +72,9 @@ Local evidence:
 
 Residual risk:
 
-- GitHub webhook source-connection binding and Slack webhook unmapped-team
-  behavior should receive deeper provider-specific route tests before broad
-  enterprise launch.
+- Provider webhook route hardening has local regression coverage for GitHub
+  source-connection binding and Slack unmapped-team ignore behavior. Staging
+  provider delivery evidence is still required before broad enterprise launch.
 
 ## Validation
 

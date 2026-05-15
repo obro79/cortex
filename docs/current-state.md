@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 ## Status
 
@@ -19,6 +19,8 @@ this snapshot.
   plan enforcement for setup, source-selection, and backfill actions.
 - GitHub webhooks fail closed when no webhook secret is configured, and invalid
   signatures return `401 Unauthorized`.
+- GitHub webhooks now reject selected-repository source mismatches, and Slack
+  webhooks ignore provider team IDs that do not map to an active installation.
 - Slack source selection validates that the OAuth installation belongs to the
   requested workspace before billing plan quota is consumed.
 - The app factory registers in-memory billing for local/test mode and SQL-backed
@@ -45,6 +47,8 @@ this snapshot.
   snapshot entries and authenticated user-to-provider-principal mappings.
 - Provider ACL freshness reporting can flag stale and missing snapshots without
   logging raw provider IDs.
+- A SQL-only `provider-acl` worker role can run scheduled, singleton provider
+  ACL refreshes from config-driven targets while keeping tokens in runtime env.
 - Tests cover connector tenant/RBAC/plan enforcement and the lifecycle deletion
   executor path.
 
@@ -104,19 +108,22 @@ this snapshot.
 - Retrieval permission filtering can require caller provider principals and deny
   protected chunks when snapshots are missing, stale, or non-matching.
 - Snapshot ingestion from provider APIs, hashed principal mapping persistence,
-  and freshness reporting are implemented. Scheduled production ingestion and
-  staging freshness drills are still required.
+  freshness reporting, and a scheduled worker entrypoint are implemented.
+  Staging deployment of the schedule and freshness drills are still required.
 
 ### Operations
 
 - Docker Compose configuration, deployment docs, hosted container boundaries,
   Kubernetes boundary docs, and runbooks are present.
 - Local validation currently covers tests, linting, formatting, typing, Docker
-  Compose config, and diff whitespace checks.
+  Compose config, lifecycle/provider ACL worker profiles, migration SQL,
+  backend ops smoke checks, and diff whitespace checks.
 - Staging restore, rollback, load, and cost drills still need real recorded
   evidence before broad launch.
 - Local evidence templates and a hardening evidence log now live under
   `docs/operations/evidence/`.
+- A no-secret backend/ops launch gate exists at
+  `scripts/backend_ops_launch_gate.py` for local preflight evidence.
 
 ## Still Not Done
 
@@ -124,7 +131,7 @@ this snapshot.
   account deletion, and full CSRF browser coverage.
 - Production Stripe activation and live checkout/portal/webhook smoke evidence.
 - Staged lifecycle deletion/export drill evidence.
-- Scheduled provider-native ACL ingestion and freshness drill evidence.
+- Deployed provider-native ACL ingestion schedule and freshness drill evidence.
 - Full customer admin UI and browser coverage.
 - Hosted support console and production drill evidence.
 - Dev routes remain public when explicitly feature-enabled and must stay off
@@ -135,18 +142,23 @@ this snapshot.
 The latest local validation after the production activation hardening work
 passed:
 
-- `uv run pytest`: 414 passed
+- `uv run pytest`: 432 passed
 - `uv run ruff check .`: passed
 - `uv run ruff format --check .`: passed
 - `uv run mypy src`: passed
 - `docker compose config`: passed
 - `docker compose --profile lifecycle config`: passed
+- `docker compose --profile provider-acl config`: passed
 - `git diff --check`: passed
 - `uv run alembic heads`: passed with one head,
   `0016_provider_principal_mappings`
 - `uv run alembic upgrade head --sql`: passed
 - `uv run alembic downgrade 0016_provider_principal_mappings:0013_lifecycle_persistence --sql`:
   passed
+- `uv run python scripts/backend_ops_launch_gate.py --evidence docs/operations/evidence/2026-05-15-backend-ops-launch-gate-local-evidence.md`:
+  passed and recorded no-secret local evidence
+- `uv run python scripts/stripe_activation_smoke.py --static --fake-gateway`:
+  passed as part of the backend ops launch gate
 
 Deep review follow-up plan:
 

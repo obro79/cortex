@@ -45,13 +45,16 @@ permission checks before customer-scoped work.
 `CORTEX_DEV_WORKBENCH_ENABLED=true` unless `CORTEX_ENV` is `local` or `test`.
 They must not be exposed in staging or production.
 
-## Residual Review Items
+## Provider Webhook Hardening Evidence
 
 - GitHub webhook signature verification is present and unselected repositories
-  are ignored before ingestion; follow-up route tests should cover
-  source-connection binding for incoming deliveries.
-- Slack webhook tenant resolution should keep failing closed for unmapped teams;
-  query fallback is acceptable only for local/test fixtures.
+  are ignored before ingestion. Source-connection binding is enforced when a
+  selected repository has an expected `source_connection_id`.
+- Slack webhook tenant resolution ignores events with a provider team ID that
+  does not map to an active installation before source lookup or ingestion.
+
+## Residual Review Items
+
 - Route tests cover the newly added billing and lifecycle admin routes. Any new
   public/admin route must be added to this audit and denied-role test coverage
   before launch.
