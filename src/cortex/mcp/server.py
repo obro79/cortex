@@ -99,7 +99,11 @@ def create_fixture_server(*, workspace_id: str = "ws_1") -> McpServer:
 
 def _canonical_service_for_runtime(runtime: CortexRuntime) -> CanonicalDecisionService:
     """Bind canonical decisions to evidence created by the injected runtime."""
-    evidence = getattr(runtime.retrieval, "evidence", None)
+    # ``CortexRuntime`` wraps the fixture RetrievalService in a typed adapter.
+    # Unwrap only that local implementation here; durable adapters should be
+    # supplied with an explicit canonical service by their composition root.
+    retrieval = getattr(runtime.retrieval, "_retrieval", runtime.retrieval)
+    evidence = getattr(retrieval, "evidence", None)
     gates = getattr(runtime.context_gate, "repository", None)
     if evidence is None:
         return _canonical_service
@@ -107,8 +111,7 @@ def _canonical_service_for_runtime(runtime: CortexRuntime) -> CanonicalDecisionS
     # The local retrieval implementation consumes this repository to elevate
     # approved canonical decisions. Production composition roots may instead
     # provide their own canonical service explicitly.
-    if hasattr(runtime.retrieval, "canonical_decisions"):
-        retrieval = runtime.retrieval
+    if hasattr(retrieval, "canonical_decisions"):
         retrieval.canonical_decisions = decisions
     return CanonicalDecisionService(
         decisions=decisions,
