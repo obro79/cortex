@@ -45,3 +45,4 @@ Current top-level ADRs:
 - [ADR-021: Distributed Coordination Without Custom Leader](021-distributed-coordination-without-custom-leader/)
 - [ADR-022: Apache Kafka Runtime](022-apache-kafka-runtime/)
 - [ADR-023: Cortex Evidence Pack Public Artifact](023-cortex-evidence-pack-public-artifact/)
+- [ADR-024: Local, Linear-Inspired Cortex Control Plane](024-local-control-plane-ui/)

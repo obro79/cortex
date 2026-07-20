@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.2 — full target architecture retained; local delivery profile separated
 **Base repository:** Cortex, not CortexG
-**Planning constraint:** 3–5 days for the first proof; target architecture intentionally untrimmed; UI intentionally deferred
+**Planning constraint:** 3–5 days for the first proof; target architecture intentionally untrimmed; local control-plane UI planned separately and starts only after a safe frontend checkpoint
 **Execution breakdown:** [100-ticket backlog](100-ticket-execution-backlog.md)
 
 ## 1. Product decision
@@ -47,7 +47,7 @@ This is the critical proof path before packaging. Google Workspace, Jira/Conflue
 
 ### Explicit non-goals for this sprint
 
-- Rebuilding or deleting the current UI.
+- Rebuilding or deleting the current UI before its user-owned scaffold has a safe checkpoint and the first API vertical slice exists.
 - Claiming live media understanding without an actual OCR or transcription result.
 - Building every provider’s OAuth and webhook integration before the core retrieval path works.
 - Porting CortexG code wholesale. Its event and normalization ideas are useful; its current worktree is too stale and dirty to treat as a source of drop-in code.

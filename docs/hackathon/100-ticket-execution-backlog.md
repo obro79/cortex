@@ -3,7 +3,7 @@
 **Status:** Planning baseline, not yet entered into an issue tracker
 **Repository:** recovered isolated Cortex snapshot; the original desktop worktree remains untouched
 **Architecture:** Full durable target retained: Postgres + object storage + Kafka + Postgres FTS + Qdrant + MCP proxy
-**Important:** Existing frontend changes are user work and are out of scope until explicitly revisited.
+**Important:** Existing frontend changes are user work. The local control-plane UI is now in planning scope, but implementation starts only after its owner creates a safe checkpoint/review boundary.
 
 ## Recovered swarm status — 2026-07-19
 
@@ -47,7 +47,7 @@ The backlog deliberately keeps the destination architecture untrimmed. The first
 | Object storage/media | Interfaces, File/InMemory payload stores, SourceFile/OCR fields, lifecycle/deletion concepts exist. | Medium | S3/MinIO adapter, secure fetcher, extraction workers, media provenance. |
 | MCP | Tool semantics and tests exist. | Medium | Actual SDK transport, stdio proxy, auth, hosted/local API boundary. |
 | Security/ops | Tenancy, RBAC, provider ACL, audit, rate limiting, lifecycle, Kafka/ops tests are substantial. | High | Apply them consistently through the new end-to-end path. |
-| UI | A newer uncommitted frontend scaffold exists. | Preserve, evaluate later | It is not the source of truth for the product or architecture. |
+| UI | A newer uncommitted frontend scaffold exists. | Preserve and checkpoint first | It is a visual foundation for the planned local control plane, not yet a live product surface. |
 
 ## Reuse inventory with exact anchors
 

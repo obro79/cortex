@@ -61,6 +61,13 @@ sizes, overlap, embedding model/dimensions, candidate limits, ranking weights,
 gate thresholds, and token budgets are defined in
 [`config-and-tuning.md`](config-and-tuning.md).
 
+## Hosted Indexing Decision
+
+The durable deployment target uses hosted Qdrant while local development uses a
+persistent Compose instance. Qdrant remains a content-free, rebuildable derived
+index; Postgres is canonical. See
+[ADR-005.1: Hosted Qdrant as a Derived Vector Index](child-adrs/001-hosted-qdrant-derived-index.md).
+
 ## How This Maps From CortexG
 
 `cortexg` has deterministic scoring plus optional embeddings. Cortex keeps the
