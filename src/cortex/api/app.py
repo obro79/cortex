@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from cortex.api.rate_limit import install_api_rate_limit
 from cortex.api.routes.billing import router as billing_router
 from cortex.api.routes.case_study import router as case_study_router
+from cortex.api.routes.demo import router as demo_router
 from cortex.api.routes.dev import router as dev_router
 from cortex.api.routes.github import router as github_router
 from cortex.api.routes.health import router as health_router
@@ -134,6 +135,7 @@ def create_app(
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
         app.include_router(dev_router)
+        app.include_router(demo_router)
     if resolved.cortex_ui_enabled:
         app.state.audit_log = InMemoryAuditLogRepository()
     event_bus: EventBus | None = None
