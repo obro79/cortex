@@ -7,7 +7,7 @@ collection all share the same provider/model/version/dimension contract.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 from cortex.chunking.config import (
@@ -31,7 +31,9 @@ class EmbeddingIndexProfile:
     dimensions: int
     collection: str
     mode: str
-    _api_key: str = ""
+    # The profile is useful in diagnostics and tests; its representation must
+    # never turn a configured provider credential into log output.
+    _api_key: str = field(default="", repr=False)
 
     @classmethod
     def from_settings(

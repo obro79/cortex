@@ -48,6 +48,7 @@ def test_real_profile_uses_compatible_document_query_embedding_contract() -> Non
     assert document.task_type == "RETRIEVAL_DOCUMENT"
     assert query.task_type == "RETRIEVAL_QUERY"
     assert profile.collection.endswith("gemini-embedding-001-gemini-1536-v1-1536")
+    assert "test-key" not in repr(profile)
 
 
 def test_durable_retrieval_and_pipeline_share_exact_profile_collection(
