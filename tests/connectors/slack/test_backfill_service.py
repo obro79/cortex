@@ -6,6 +6,8 @@ from cortex.connectors.slack.client import SlackHistoryPage
 from cortex.connectors.slack.service import create_slack_connector_services
 from cortex.contracts.enums import BackfillJobStatus
 
+from .helpers import installed_selected_services
+
 
 class FakeSlackClient:
     def __init__(self) -> None:
@@ -113,3 +115,42 @@ async def test_backfill_resume_counts_duplicates_without_rewriting_payloads() ->
     assert first.raw_events_created == 4
     assert second.raw_events_created == 0
     assert second.duplicates == 4
+
+
+async def test_backfill_rejects_foreign_or_disabled_source_before_job_creation() -> (
+    None
+):
+    services, _install, selected = await installed_selected_services()
+    source_id = selected["source_connections"][0]["id"]
+
+    original_get_token = services.secrets.get_token
+
+    def unexpected_token_access(_secret_ref_id: str) -> str:
+        raise AssertionError("token must not be accessed for an unauthorized source")
+
+    services.secrets.get_token = unexpected_token_access
+
+    try:
+        await services.backfill.backfill_source(
+            workspace_id="ws_other", source_connection_id=source_id
+        )
+    except PermissionError as error:
+        assert str(error) == "source_not_active_for_workspace"
+    else:
+        raise AssertionError("foreign workspace source should be rejected")
+
+    # Restore the normal secret accessor before exercising the disabled source.
+    services.secrets.get_token = original_get_token
+    services.source_connections.disable_channel(
+        workspace_id="ws_1", source_connection_id=source_id
+    )
+    try:
+        await services.backfill.backfill_source(
+            workspace_id="ws_1", source_connection_id=source_id
+        )
+    except PermissionError as error:
+        assert str(error) == "source_not_active_for_workspace"
+    else:
+        raise AssertionError("disabled source should be rejected")
+
+    assert services.backfills.list_for_workspace("ws_1") == []

@@ -12,6 +12,10 @@ from .service import RetrievalServiceResponse
 CONTRACT_VERSION: Final[Literal["cortex.task_context.v1"]] = "cortex.task_context.v1"
 MAX_EVIDENCE_ITEMS = 12
 MAX_TOKENS = 4_000
+MAX_FILTER_ITEM_LENGTH = 256
+MAX_FILTER_BYTES = 8_192
+MAX_HINT_ITEM_LENGTH = 500
+MAX_HINT_BYTES = 16_000
 ErrorCode = Literal[
     "INVALID_ARGUMENTS",
     "AUTH_REQUIRED",
@@ -45,10 +49,53 @@ class TaskHints(_StrictModel):
             raise ValueError("objective must not be blank")
         return value.strip()
 
+    @field_validator("repository", "branch")
+    @classmethod
+    def optional_hint_is_bounded(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("task hints must not be blank")
+        return normalized
+
+    @field_validator("issue_ids", "file_hints")
+    @classmethod
+    def string_hints_are_bounded(cls, value: list[str]) -> list[str]:
+        return _normalize_strings(
+            value,
+            item_limit=MAX_HINT_ITEM_LENGTH,
+            total_limit=MAX_HINT_BYTES,
+        )
+
+    @field_validator("pull_request_numbers")
+    @classmethod
+    def pull_request_numbers_are_unique(cls, value: list[int]) -> list[int]:
+        return sorted(set(value))
+
 
 class TaskContextFilters(_StrictModel):
     providers: list[str] = Field(default_factory=list, max_length=20)
     source_ids: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("providers")
+    @classmethod
+    def providers_are_bounded(cls, value: list[str]) -> list[str]:
+        return _normalize_strings(
+            value,
+            item_limit=64,
+            total_limit=MAX_FILTER_BYTES,
+            lower=True,
+        )
+
+    @field_validator("source_ids")
+    @classmethod
+    def source_ids_are_bounded(cls, value: list[str]) -> list[str]:
+        return _normalize_strings(
+            value,
+            item_limit=MAX_FILTER_ITEM_LENGTH,
+            total_limit=MAX_FILTER_BYTES,
+        )
 
 
 class FreshnessRequest(_StrictModel):
@@ -57,16 +104,18 @@ class FreshnessRequest(_StrictModel):
 
 
 class ContextBudget(_StrictModel):
-    maximum_evidence_items: int = Field(default=MAX_EVIDENCE_ITEMS, ge=1)
-    maximum_tokens: int = Field(default=MAX_TOKENS, ge=1)
+    maximum_evidence_items: int = Field(
+        default=MAX_EVIDENCE_ITEMS, ge=1, le=MAX_EVIDENCE_ITEMS
+    )
+    maximum_tokens: int = Field(default=MAX_TOKENS, ge=1, le=MAX_TOKENS)
 
     @property
     def evidence_items(self) -> int:
-        return min(self.maximum_evidence_items, MAX_EVIDENCE_ITEMS)
+        return self.maximum_evidence_items
 
     @property
     def tokens(self) -> int:
-        return min(self.maximum_tokens, MAX_TOKENS)
+        return self.maximum_tokens
 
 
 class TaskContextRequest(_StrictModel):
@@ -178,15 +227,21 @@ class TaskContextService:
         citations = _items(_mapping(pack.get("citations_json")).get("items"))[
             : request.budget.evidence_items
         ]
-        per_item_tokens = max(1, request.budget.tokens // max(1, len(citations)))
-        evidence = [
-            self._evidence(
-                item,
+        # The configured budget is a total response budget, not a per-citation
+        # hint.  Allocate the remaining token allowance in rank order so a
+        # tiny request cannot expand to one token per selected citation.
+        evidence: list[TaskEvidence] = []
+        remaining_tokens = request.budget.tokens
+        for citation in citations:
+            if remaining_tokens <= 0:
+                break
+            item = self._evidence(
+                citation,
                 maximum_age=request.freshness.maximum_age_seconds,
-                maximum_tokens=per_item_tokens,
+                maximum_tokens=remaining_tokens,
             )
-            for item in citations
-        ]
+            evidence.append(item)
+            remaining_tokens -= len(item.snippet.split())
         if request.freshness.require_fresh:
             evidence = [item for item in evidence if item.freshness == "fresh"]
             if not evidence:
@@ -294,6 +349,39 @@ def invalid_arguments_response(
 
 def parse_task_context_request(arguments: object) -> TaskContextRequest:
     return TaskContextRequest.model_validate(arguments)
+
+
+def _normalize_strings(
+    values: list[str],
+    *,
+    item_limit: int,
+    total_limit: int,
+    lower: bool = False,
+) -> list[str]:
+    """Normalize bounded caller-controlled string collections.
+
+    The values are used in SQL/vector filters and query construction.  Keeping
+    both an item and aggregate bound prevents a valid-but-enormous MCP payload
+    from becoming a database work amplifier.
+    """
+    normalized: list[str] = []
+    seen: set[str] = set()
+    total = 0
+    for value in values:
+        candidate = value.strip()
+        if lower:
+            candidate = candidate.lower()
+        if not candidate:
+            raise ValueError("filter and task-hint values must not be blank")
+        if len(candidate) > item_limit:
+            raise ValueError("filter or task-hint value exceeds its length limit")
+        total += len(candidate.encode())
+        if total > total_limit:
+            raise ValueError("filter or task-hint values exceed the byte budget")
+        if candidate not in seen:
+            seen.add(candidate)
+            normalized.append(candidate)
+    return normalized
 
 
 def _mapping(value: object) -> dict[str, Any]:

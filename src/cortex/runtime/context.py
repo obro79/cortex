@@ -14,6 +14,7 @@ from cortex.retrieval.task_context import (
     TaskContextRequest,
     TaskContextResponse,
     TaskContextService,
+    TaskHints,
 )
 
 
@@ -108,11 +109,7 @@ class CortexRuntime:
         related: bool = False,
     ) -> RetrievalServiceResponse:
         retrieval = self._context_retrieval()
-        method = (
-            retrieval.get_related_work
-            if related
-            else retrieval.retrieve_context
-        )
+        method = retrieval.get_related_work if related else retrieval.retrieve_context
         return await method(
             workspace_id=authority.workspace_id,
             query=query,
@@ -138,7 +135,7 @@ class CortexRuntime:
         try:
             response = await self.retrieve(
                 authority=authority,
-                query=request.task.objective,
+                query=_task_query(request.task),
                 source_allowlist=request.filters.source_ids,
                 provider_filters=request.filters.providers,
             )
@@ -201,9 +198,7 @@ class CortexRuntime:
         self, retrieval_request_id: str
     ) -> RetrievalRequest:
         """Read through the declared adapter contract, including async stores."""
-        result = self._context_retrieval().read_retrieval_request(
-            retrieval_request_id
-        )
+        result = self._context_retrieval().read_retrieval_request(retrieval_request_id)
         if isawaitable(result):
             result = await result
         return result
@@ -237,3 +232,29 @@ def create_local_runtime() -> CortexRuntime:
         ),
         live_data=False,
     )
+
+
+def _task_query(task: TaskHints) -> str:
+    """Encode explicit task hints into the retrieval query deterministically.
+
+    The retrieval planner already recognizes issue IDs, pull-request numbers,
+    and file paths in query text.  Keeping this adapter at the runtime boundary
+    makes the structured MCP fields effective without inventing a second query
+    planning contract, while leaving the user objective first for lexical
+    ranking.
+    """
+    parts = [task.objective]
+    if task.repository:
+        parts.append(f"repository {task.repository}")
+    if task.branch:
+        parts.append(f"branch {task.branch}")
+    if task.issue_ids:
+        parts.append("issues " + " ".join(task.issue_ids))
+    if task.pull_request_numbers:
+        parts.append(
+            "pull requests "
+            + " ".join(f"#{number}" for number in task.pull_request_numbers)
+        )
+    if task.file_hints:
+        parts.append("files " + " ".join(task.file_hints))
+    return "\n".join(parts)

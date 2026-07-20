@@ -28,7 +28,7 @@ def normalize_agent_session_payload(
     if raw_event.event_type not in SUPPORTED_EVENT_TYPES:
         raise ProviderNormalizationError("unsupported agent session event type")
     payload = load_object(payload_bytes, "agent_session")
-    export = _parse_export(payload)
+    export, local_session_ref_hash = _parse_export(payload)
     checkpoint = export.content_payload()
     now = datetime.now(UTC)
     checkpoint_id = export.checkpoint_id
@@ -46,7 +46,7 @@ def normalize_agent_session_payload(
         normalized_version=NORMALIZED_VERSION,
         content_hash=export.content_hash,
         content_text=_content_text(checkpoint),
-        metadata_json=_metadata(export, checkpoint),
+        metadata_json=_metadata(export, checkpoint, local_session_ref_hash),
         status=SourceObjectStatus.ACTIVE,
         trace_id=raw_event.trace_id,
         created_at=now,
@@ -59,7 +59,7 @@ def normalize_agent_session_payload(
     )
 
 
-def _parse_export(payload: dict[str, Any]) -> AgentCheckpointExport:
+def _parse_export(payload: dict[str, Any]) -> tuple[AgentCheckpointExport, str]:
     if payload.get("export_marker") != EXPORT_MARKER:
         raise ProviderNormalizationError(
             "agent checkpoint requires explicit export marker"
@@ -78,12 +78,15 @@ def _parse_export(payload: dict[str, Any]) -> AgentCheckpointExport:
     ):
         raise ProviderNormalizationError("agent checkpoint payload is malformed")
     try:
-        return AgentCheckpointExport(
-            export_marker=payload["export_marker"],
-            export_enabled=payload["export_enabled"],
-            local_session_ref="x" * 16,
-            content_hash=payload["content_hash"],
-            **checkpoint,
+        return (
+            AgentCheckpointExport(
+                export_marker=payload["export_marker"],
+                export_enabled=payload["export_enabled"],
+                local_session_ref="x" * 16,
+                content_hash=payload["content_hash"],
+                **checkpoint,
+            ),
+            local_ref_hash,
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ProviderNormalizationError(
@@ -118,13 +121,15 @@ def _content_text(checkpoint: dict[str, Any]) -> str:
 
 
 def _metadata(
-    export: AgentCheckpointExport, checkpoint: dict[str, Any]
+    export: AgentCheckpointExport,
+    checkpoint: dict[str, Any],
+    local_session_ref_hash: str,
 ) -> dict[str, Any]:
     return {
         "source_kind": "explicit_agent_checkpoint_export",
         "provider": str(export.provider),
         "visibility": str(export.visibility),
-        "local_session_ref_hash": export.to_payload()["local_session_ref_hash"],
+        "local_session_ref_hash": local_session_ref_hash,
         "file_summaries": [
             {
                 "path_hash": _path_hash(file["path"]),

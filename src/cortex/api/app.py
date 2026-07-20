@@ -1,6 +1,8 @@
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.api.rate_limit import install_api_rate_limit
 from cortex.api.routes.billing import router as billing_router
@@ -39,6 +41,7 @@ from cortex.lifecycle import InMemoryLifecycleRepository
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
 from cortex.permissions import InMemoryProviderPrincipalMappingRepository
+from cortex.permissions.service import PermissionService
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.runtime import CortexRuntime, DurableContextRetrieval
@@ -52,6 +55,8 @@ def create_app(
     *,
     ephemeral_cache: EphemeralCacheService | None = None,
     cortex_runtime: CortexRuntime | None = None,
+    durable_permission_service_factory: Callable[[AsyncSession], PermissionService]
+    | None = None,
 ) -> FastAPI:
     resolved = settings or get_settings()
     setup_logging(resolved.cortex_log_level)
@@ -67,13 +72,22 @@ def create_app(
         else None
     )
     app.state.session_factory = session_factory
-    if cortex_runtime is None and session_factory is not None and resolved.qdrant_url:
-        # SQL is canonical; Qdrant only supplies vector candidates.  Do not
-        # substitute the local fixture when either durable dependency is absent.
+    if (
+        cortex_runtime is None
+        and session_factory is not None
+        and resolved.qdrant_url
+        and durable_permission_service_factory is not None
+    ):
+        # SQL is canonical and Qdrant only supplies derived vector candidates.
+        # A durable permission snapshot factory is mandatory: installing a
+        # retrieval runtime without it would either leak unscoped content or
+        # fail every request at execution time.  Deployments that have not
+        # wired durable scope/ACL authority receive an explicit 503 instead.
         app.state.cortex_runtime = CortexRuntime(
             retrieval=DurableContextRetrieval(
                 session_factory=session_factory,
                 settings=resolved,
+                permission_service_factory=durable_permission_service_factory,
             ),
             context_gate=None,
             live_data=True,
@@ -227,6 +241,7 @@ def create_app(
                 or resolved.github_installation_token
             ),
             installation_token=resolved.github_installation_token,
+            installation_workspace_id=resolved.github_installation_workspace_id,
             client=RealGitHubClient(),
             webhook_secret=resolved.github_webhook_secret,
             provider_rate_limiter=provider_rate_limiter,

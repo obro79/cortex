@@ -113,3 +113,16 @@ def test_slack_source_object_chunk_uses_message_text_without_metadata_leak() -> 
     assert "Project comet" not in str(first.metadata_json)
     assert first.metadata_json["provider"] == "slack"
     assert first.metadata_json["source_type"] == "slack_thread"
+
+
+def test_chunk_carries_canonical_source_freshness_timestamps() -> None:
+    now = datetime(2026, 7, 19, 12, 30, tzinfo=UTC)
+    source = source_object()
+    source = source.model_copy(update={"occurred_at": now, "source_updated_at": now})
+
+    chunk = SourceAwareChunker(
+        load_retrieval_config().chunking
+    ).chunks_for_source_object(source)[0]
+
+    assert chunk.metadata_json["occurred_at"] == now.isoformat()
+    assert chunk.metadata_json["source_updated_at"] == now.isoformat()

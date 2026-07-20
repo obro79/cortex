@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     github_installation_token: str = Field(
         default="", alias="GITHUB_INSTALLATION_TOKEN"
     )
+    github_installation_workspace_id: str = Field(
+        default="", alias="GITHUB_INSTALLATION_WORKSPACE_ID"
+    )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
     stripe_api_key: str = Field(default="", alias="STRIPE_API_KEY")
     stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
@@ -221,8 +224,7 @@ class Settings(BaseSettings):
         if (
             self.qdrant_url
             and (
-                not _is_local_qdrant_url(self.qdrant_url)
-                or self.qdrant_api_key.strip()
+                not _is_local_qdrant_url(self.qdrant_url) or self.qdrant_api_key.strip()
             )
             and urlparse(self.qdrant_url).scheme != "https"
         ):

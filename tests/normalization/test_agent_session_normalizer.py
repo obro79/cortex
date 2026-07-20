@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
+from cortex.chunking.config import load_retrieval_config
+from cortex.chunking.source_aware import SourceAwareChunker
 from cortex.connectors.agent_sessions import (
     EXPORT_MARKER,
     AgentCheckpointExport,
@@ -93,6 +95,33 @@ def test_normalizer_emits_provenance_without_native_refs_or_sensitive_paths() ->
     assert file_metadata[0]["path_hash"].startswith("sha256:")
     assert ".env.production" not in (source_object.content_text or "")
     assert "caller-export-reference" not in str(source_object.metadata_json)
+    assert (
+        source_object.metadata_json["local_session_ref_hash"]
+        == _export().to_payload()["local_session_ref_hash"]
+    )
+
+
+def test_agent_checkpoint_content_is_chunked_with_safe_metadata() -> None:
+    result = normalize_agent_session_payload(
+        _raw_event(), canonical_json_bytes(_export().to_payload())
+    )
+    source_object = result.source_objects[0]
+
+    chunk = SourceAwareChunker(
+        load_retrieval_config().chunking
+    ).chunks_for_source_object(source_object)[0]
+
+    assert chunk.chunk_type == "agent_checkpoint_overview"
+    assert "Task state: blocked" in chunk.text
+    assert (
+        chunk.metadata_json["local_session_ref_hash"]
+        == _export().to_payload()["local_session_ref_hash"]
+    )
+    assert chunk.metadata_json["source_updated_at"] == (
+        source_object.source_updated_at.isoformat()
+    )
+    assert "file_summaries" not in chunk.metadata_json
+    assert "evidence_references" not in chunk.metadata_json
 
 
 def test_normalizer_rejects_unmarked_disabled_or_transcript_payloads() -> None:

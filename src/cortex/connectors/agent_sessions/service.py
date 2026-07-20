@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from cortex.contracts.agent_sessions import AgentCheckpointExport
+from cortex.ingestion.payloads import sha256_digest
 from cortex.ingestion.raw_events import RawEventInput
 
 
@@ -39,13 +40,14 @@ class AgentCheckpointImportPlan:
 
     def raw_event(self) -> RawEventInput:
         checkpoint = self.checkpoint
+        event_identity = sha256_digest(
+            f"{checkpoint.checkpoint_id}:{checkpoint.content_hash}".encode()
+        ).removeprefix("sha256:")
         return RawEventInput(
             workspace_id=self.workspace_id,
             source_connection_id=self.source_connection_id,
             provider="agent_session",
-            external_event_id=(
-                f"agent_checkpoint:{checkpoint.checkpoint_id}:{checkpoint.content_hash}"
-            ),
+            external_event_id=f"agent_checkpoint:{event_identity}",
             event_type="agent_session.checkpoint.exported",
             external_object_key=f"agent_session:checkpoint:{checkpoint.checkpoint_id}",
             idempotency_key=(

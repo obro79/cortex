@@ -114,6 +114,21 @@ def test_checkpoint_contract_rejects_transcripts_native_handles_and_secrets() ->
             **secret_content,
         )
 
+    for token in (
+        "xoxb-1234567890abcdefghijklmnop",
+        "xapp-1234567890abcdefghijklmnop",
+        "github_pat_1234567890abcdefghijklmnop",
+    ):
+        token_content = checkpoint_content(task_summary=f"Do not persist {token}")
+        with pytest.raises(ValueError, match="redact"):
+            AgentCheckpointExport(
+                export_marker=EXPORT_MARKER,
+                export_enabled=True,
+                local_session_ref="caller-export-reference-0001",
+                content_hash=content_hash_for_checkpoint(token_content),
+                **token_content,
+            )
+
 
 def test_checkpoint_contract_fails_closed_for_export_marker_visibility_and_hash() -> (
     None
@@ -166,3 +181,18 @@ def test_contract_is_provider_neutral() -> None:
     )
 
     assert export.provider == AgentCheckpointProvider.CURSOR
+
+
+def test_max_length_checkpoint_identifiers_produce_bounded_raw_event_fields() -> None:
+    export = make_export(checkpoint_id="c" * 256)
+    plan = AgentCheckpointImportPlan(
+        workspace_id="w" * 128,
+        source_connection_id="src_agent_checkpoint",
+        checkpoint=export,
+    )
+
+    raw_event = plan.raw_event()
+
+    assert len(raw_event.external_event_id) <= 256
+    assert len(raw_event.external_object_key) <= 512
+    assert len(raw_event.idempotency_key) <= 512

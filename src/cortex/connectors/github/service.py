@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -18,6 +19,7 @@ from cortex.platform.rate_limits import (
     RateLimitService,
     RateLimitSubject,
 )
+from cortex.utils.asyncio import maybe_await
 
 from .client import (
     EmptyGitHubClient,
@@ -35,6 +37,11 @@ class GitHubIngestionService(Protocol):
 class GitHubConnectorServices:
     app_configured: bool = False
     installation_token: str = ""
+    # The current connector accepts one installation token per process.  Bind
+    # it to an explicit workspace so a multi-tenant API cannot let the first
+    # caller claim a process-global credential. Empty means live operations
+    # fail closed until deployment configuration provides the binding.
+    installation_workspace_id: str = ""
     client: GitHubClient = field(default_factory=EmptyGitHubClient)
     webhook_secret: str = ""
     repo_ids: set[str] = field(default_factory=set)
@@ -46,6 +53,16 @@ class GitHubConnectorServices:
     workspace_repo_source_connection_ids: dict[tuple[str, str], str] = field(
         default_factory=dict
     )
+    workspace_repo_coordinates: dict[tuple[str, str], tuple[str, str]] = field(
+        default_factory=dict
+    )
+    # GitHub's list endpoint identifies repos numerically while the live
+    # backfill payloads use ``owner/name``. Keep the canonical event ID as an
+    # alias of the selected record rather than treating them as two sources.
+    workspace_repo_event_ids: dict[tuple[str, str], str] = field(default_factory=dict)
+    removal_callback: (
+        Callable[[str, str, str | None], Awaitable[None] | None] | None
+    ) = None
     sync_state: dict[tuple[str, str], dict[str, object]] = field(default_factory=dict)
     raw_events: InMemoryRawEventRepository = field(
         default_factory=InMemoryRawEventRepository
@@ -72,22 +89,46 @@ class GitHubConnectorServices:
         private_key: str,
         installation_token: str = "",
     ) -> dict[str, object]:
-        self.app_configured = bool((app_id and private_key) or installation_token)
-        self.installation_token = installation_token
+        # App credentials are not persisted or exchanged for an installation
+        # token by this in-memory service. Never advertise supplied key material
+        # as live credentials until that persistence/exchange seam exists.
+        if installation_token:
+            self.app_configured = True
+            self.installation_token = installation_token
+        elif app_id or private_key:
+            return {
+                "ok": False,
+                "workspace_id": workspace_id,
+                "auth_type": "github_app",
+                "app_id": app_id if app_id else None,
+                "private_key_ref": "github_private_key" if private_key else None,
+                "installation_token_ref": None,
+                "error": "github_credential_persistence_required",
+            }
         return {
-            "ok": self.app_configured,
+            "ok": bool(self.installation_token),
             "workspace_id": workspace_id,
             "auth_type": "github_app",
-            "app_id": app_id if app_id else None,
-            "private_key_ref": "github_private_key" if private_key else None,
+            "app_id": None,
+            "private_key_ref": None,
             "installation_token_ref": "github_installation_token"
-            if installation_token
+            if self.installation_token
             else None,
+            "error": None,
         }
 
     def select_repos(
         self, *, workspace_id: str, repos: list[dict[str, Any]]
     ) -> dict[str, object]:
+        if self.installation_token and (
+            not self.installation_workspace_id
+            or self.installation_workspace_id != workspace_id
+        ):
+            return {
+                "ok": False,
+                "workspace_id": workspace_id,
+                "error": "github_installation_workspace_binding_required",
+            }
         selected = []
         for repo in repos:
             repo_id = str(repo.get("id", ""))
@@ -100,10 +141,26 @@ class GitHubConnectorServices:
                     self.workspace_repo_source_connection_ids[
                         (workspace_id, repo_id)
                     ] = source_connection_id
+                coordinates = _canonical_repo_coordinates(repo)
+                if coordinates is not None:
+                    previous_coordinates = self.workspace_repo_coordinates.get(
+                        (workspace_id, repo_id)
+                    )
+                    if previous_coordinates is not None:
+                        self.workspace_repo_event_ids.pop(
+                            (workspace_id, _repository_name(*previous_coordinates)),
+                            None,
+                        )
+                    self.workspace_repo_coordinates[(workspace_id, repo_id)] = (
+                        coordinates
+                    )
+                    self.workspace_repo_event_ids[
+                        (workspace_id, _repository_name(*coordinates))
+                    ] = repo_id
                 selected.append({"id": repo_id})
         return {"ok": True, "workspace_id": workspace_id, "selected": selected}
 
-    def remove_repo(
+    async def remove_repo(
         self,
         *,
         workspace_id: str,
@@ -127,10 +184,22 @@ class GitHubConnectorServices:
                 "status": "source_mismatch",
                 "workspace_id": workspace_id,
             }
+        if self.removal_callback is None:
+            return {
+                "ok": False,
+                "status": "removal_cleanup_unavailable",
+                "workspace_id": workspace_id,
+            }
+        await maybe_await(self.removal_callback(workspace_id, repo_id, expected))
         selected.remove(repo_id)
         self.workspace_repo_source_connection_ids.pop((workspace_id, repo_id), None)
-        if source_connection_id:
-            self.sync_state.pop((workspace_id, source_connection_id), None)
+        coordinates = self.workspace_repo_coordinates.pop((workspace_id, repo_id), None)
+        if coordinates is not None:
+            self.workspace_repo_event_ids.pop(
+                (workspace_id, _repository_name(*coordinates)), None
+            )
+        if expected:
+            self.sync_state.pop((workspace_id, expected), None)
         return {"ok": True, "status": "removed", "workspace_id": workspace_id}
 
     async def backfill(
@@ -185,16 +254,17 @@ class GitHubConnectorServices:
         *,
         workspace_id: str,
         source_connection_id: str,
-        owner: str,
-        repo: str,
+        owner: str = "",
+        repo: str = "",
         limit: int = 25,
     ) -> dict[str, object]:
         if not self.installation_token:
             return {"ok": False, "error": "github_installation_token_required"}
-        if not self._live_source_is_selected(
+        coordinates = self._live_selected_repository(
             workspace_id=workspace_id,
             source_connection_id=source_connection_id,
-        ):
+        )
+        if coordinates is None:
             return {"ok": False, "error": "github_source_not_selected"}
         if self.provider_rate_limiter and self.provider_rate_limit_policy:
             try:
@@ -215,8 +285,8 @@ class GitHubConnectorServices:
         try:
             backfill = await self.client.backfill_repository(
                 access_token=self.installation_token,
-                owner=owner,
-                repo=repo,
+                owner=coordinates[0],
+                repo=coordinates[1],
                 limit=limit,
             )
         except GitHubRateLimitError:
@@ -312,6 +382,9 @@ class GitHubConnectorServices:
             "ok": True,
             "workspace_id": workspace_id,
             "provider": "github",
+            # Setup readiness and live-token readiness are intentionally
+            # distinct: an app may be configured while installation-token
+            # persistence/exchange remains unavailable.
             "auth_status": "active" if self.app_configured else "missing_app",
             "selected_source_count": len(
                 self.workspace_repo_ids.get(workspace_id, self.repo_ids)
@@ -329,10 +402,13 @@ class GitHubConnectorServices:
     ) -> bool:
         scoped_repos = self.workspace_repo_ids.get(workspace_id)
         if scoped_repos is not None:
-            if repo_id not in scoped_repos:
+            selected_repo_id = self._selected_repo_id(
+                workspace_id=workspace_id, repo_id=repo_id
+            )
+            if selected_repo_id is None:
                 return False
             expected = self.workspace_repo_source_connection_ids.get(
-                (workspace_id, repo_id)
+                (workspace_id, selected_repo_id)
             )
             return expected is None or expected == source_connection_id
         if self.workspace_repo_ids:
@@ -348,26 +424,43 @@ class GitHubConnectorServices:
         self, *, workspace_id: str, repo_id: str
     ) -> str | None:
         if workspace_id in self.workspace_repo_ids:
+            selected_repo_id = self._selected_repo_id(
+                workspace_id=workspace_id, repo_id=repo_id
+            )
+            if selected_repo_id is None:
+                return None
             return self.workspace_repo_source_connection_ids.get(
-                (workspace_id, repo_id)
+                (workspace_id, selected_repo_id)
             )
         return self.repo_source_connection_ids.get(repo_id)
 
-    def _live_source_is_selected(
+    def _selected_repo_id(self, *, workspace_id: str, repo_id: str) -> str | None:
+        scoped = self.workspace_repo_ids.get(workspace_id, set())
+        if repo_id in scoped:
+            return repo_id
+        return self.workspace_repo_event_ids.get(
+            (workspace_id, _repository_name_from_event_id(repo_id))
+        )
+
+    def _live_selected_repository(
         self, *, workspace_id: str, source_connection_id: str
-    ) -> bool:
-        # Legacy callers that never invoked selection remain supported for
-        # deterministic tests. A configured scoped selection is fail-closed.
+    ) -> tuple[str, str] | None:
+        """Return the canonical selected repository bound to this source.
+
+        Live imports intentionally have no legacy fallback: after a restart or
+        without a persisted selection, there is no authority to call GitHub.
+        """
         scoped = self.workspace_repo_ids.get(workspace_id)
-        if scoped is None:
-            return (
-                not self.repo_ids
-                or source_connection_id in self.repo_source_connection_ids.values()
-            )
-        return source_connection_id in {
-            self.workspace_repo_source_connection_ids.get((workspace_id, repo_id))
+        if not scoped:
+            return None
+        matches = [
+            self.workspace_repo_coordinates.get((workspace_id, repo_id))
             for repo_id in scoped
-        }
+            if self.workspace_repo_source_connection_ids.get((workspace_id, repo_id))
+            == source_connection_id
+        ]
+        verified = [coordinates for coordinates in matches if coordinates is not None]
+        return verified[0] if len(verified) == 1 else None
 
     def _record_sync_state(
         self,
@@ -392,6 +485,36 @@ def _repo_id(event: dict[str, Any]) -> str:
     if isinstance(repo, dict) and repo.get("id"):
         return str(repo["id"])
     return str(event.get("repository_id", "unknown-repo"))
+
+
+def _canonical_repo_coordinates(repo: dict[str, Any]) -> tuple[str, str] | None:
+    """Extract GitHub's canonical owner/name from a selected repository."""
+    full_name = repo.get("full_name")
+    if isinstance(full_name, str):
+        owner, separator, name = full_name.strip().partition("/")
+        if separator and owner and name and "/" not in name:
+            return owner, name
+    owner_value = repo.get("owner")
+    candidate_owner: Any = (
+        owner_value.get("login") if isinstance(owner_value, dict) else owner_value
+    )
+    candidate_name: Any = repo.get("name")
+    if (
+        isinstance(candidate_owner, str)
+        and candidate_owner
+        and isinstance(candidate_name, str)
+        and candidate_name
+    ):
+        return candidate_owner, candidate_name
+    return None
+
+
+def _repository_name(owner: str, repo: str) -> str:
+    return f"{owner}/{repo}".lower()
+
+
+def _repository_name_from_event_id(repo_id: str) -> str:
+    return repo_id.strip().lower()
 
 
 def _event_id(event: dict[str, Any]) -> str:

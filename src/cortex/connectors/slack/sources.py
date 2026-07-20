@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from cortex.utils.asyncio import maybe_await
@@ -15,11 +16,13 @@ class SlackSourceSelectionService:
         secrets: Any,
         source_connections: Any,
         client: SlackWebClient,
+        removal_callback: Callable[[str, str], Awaitable[None] | None] | None = None,
     ) -> None:
         self.installations = installations
         self.secrets = secrets
         self.source_connections = source_connections
         self.client = client
+        self.removal_callback = removal_callback
 
     async def list_channels(
         self,
@@ -104,6 +107,13 @@ class SlackSourceSelectionService:
         )
         if source.workspace_id != workspace_id:
             raise PermissionError("workspace_mismatch")
+        if self.removal_callback is None:
+            return {
+                "ok": False,
+                "status": "removal_cleanup_unavailable",
+                "workspace_id": workspace_id,
+            }
+        await maybe_await(self.removal_callback(workspace_id, source_connection_id))
         disabled = await maybe_await(
             self.source_connections.disable_channel(
                 workspace_id=workspace_id, source_connection_id=source_connection_id

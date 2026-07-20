@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cortex.auth.dependencies import require_tenant_context, resolve_provider_principals
 from cortex.observability.tracing import ensure_trace_context
+from cortex.retrieval.task_context import TaskContextRequest, TaskContextResponse
 from cortex.runtime import CortexAuthority, CortexRuntime
 from cortex.tenancy import TenantContext
 
@@ -98,6 +99,24 @@ async def query_context(
         latency_ms=response.latency_ms,
         text=response.text,
         evidence_pack=response.evidence_pack,
+    )
+
+
+@router.post("/task-context", response_model=TaskContextResponse)
+async def get_task_context(
+    request: Request, body: TaskContextRequest, context: TenantDependency
+) -> TaskContextResponse:
+    """Expose the same bounded evidence-only contract as the MCP tool.
+
+    Tenant/actor authority is resolved from the authenticated transport, never
+    from the browser or request body.  This route intentionally uses the
+    stable task-context DTO rather than adapting the older free-form query
+    response in the local BFF.
+    """
+    authority = await _authority(request, context)
+    return await _runtime(request).get_task_context(
+        authority=authority,
+        request=body,
     )
 
 

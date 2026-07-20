@@ -98,6 +98,12 @@ async def test_list_channels_uses_installation_token_and_redacts_selection() -> 
 async def test_deselect_channel_disables_source_and_prevents_selected_lookup() -> None:
     services, _install, selected = await installed_selected_services()
     source_id = selected["source_connections"][0]["id"]
+    removed: list[tuple[str, str]] = []
+
+    async def remove_indexed_data(workspace_id: str, source_connection_id: str) -> None:
+        removed.append((workspace_id, source_connection_id))
+
+    services.sources.removal_callback = remove_indexed_data
 
     result = await services.sources.deselect_channel(
         workspace_id="ws_1", source_connection_id=source_id
@@ -107,3 +113,17 @@ async def test_deselect_channel_disables_source_and_prevents_selected_lookup() -
     assert result["source_connection"]["selected"] is False
     assert result["source_connection"]["status"] == SourceConnectionStatus.DISABLED
     assert services.source_connections.get_selected_channel("ws_1", "C123") is None
+    assert removed == [("ws_1", source_id)]
+
+
+async def test_deselect_fails_closed_without_cleanup_callback() -> None:
+    services, _install, selected = await installed_selected_services()
+    source_id = selected["source_connections"][0]["id"]
+
+    result = await services.sources.deselect_channel(
+        workspace_id="ws_1", source_connection_id=source_id
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "removal_cleanup_unavailable"
+    assert services.source_connections.get_selected_channel("ws_1", "C123") is not None

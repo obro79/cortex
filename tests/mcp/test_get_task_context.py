@@ -2,8 +2,9 @@ from cortex.mcp.server import McpServer, list_tool_definitions
 from cortex.runtime import CortexAuthority, create_local_runtime
 
 
-async def test_get_task_context_uses_host_authority_and_rejects_tenancy_fields(
-) -> None:
+async def test_get_task_context_uses_host_authority_and_rejects_tenancy_fields() -> (
+    None
+):
     server = McpServer(
         runtime=create_local_runtime(),
         authority=CortexAuthority(

@@ -419,9 +419,7 @@ def list_tool_definitions() -> list[dict[str, object]]:
         "anyOf": [{"required": ["query"]}, {"required": ["evidence_pack_id"]}],
     }
     proposal = next(
-        item
-        for item in definitions
-        if item["name"] == "propose_canonical_decision"
+        item for item in definitions if item["name"] == "propose_canonical_decision"
     )
     proposal["inputSchema"] = {
         "type": "object",
@@ -440,9 +438,7 @@ def list_tool_definitions() -> list[dict[str, object]]:
         ],
     }
     approval = next(
-        item
-        for item in definitions
-        if item["name"] == "approve_canonical_decision"
+        item for item in definitions if item["name"] == "approve_canonical_decision"
     )
     approval["inputSchema"] = {
         "type": "object",

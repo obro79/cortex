@@ -3,9 +3,7 @@ from typing import Any, Protocol
 
 VectorMetadataScalar = str | int | bool
 VectorMetadataList = list[str] | list[int]
-VectorMetadataFilter = Mapping[
-    str, VectorMetadataScalar | VectorMetadataList
-]
+VectorMetadataFilter = Mapping[str, VectorMetadataScalar | VectorMetadataList]
 
 
 class VectorIndex(Protocol):
@@ -20,6 +18,14 @@ class VectorIndex(Protocol):
     ) -> None: ...
 
     async def delete(self, collection: str, point_id: str) -> None: ...
+
+    async def verify_point(
+        self,
+        collection: str,
+        point_id: str,
+        *,
+        expected_payload: dict[str, Any] | None,
+    ) -> bool: ...
 
     async def search(
         self, collection: str, vector: list[float], limit: int

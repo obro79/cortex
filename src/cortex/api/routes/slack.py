@@ -215,10 +215,13 @@ async def deselect_source(
         permission=Permission.SOURCE_SELECT,
     )
     try:
-        return await get_slack_services(request).sources.deselect_channel(
+        result = await get_slack_services(request).sources.deselect_channel(
             workspace_id=workspace_id,
             source_connection_id=source_connection_id,
         )
+        if result.get("ok") is not True:
+            raise HTTPException(status_code=409, detail=result)
+        return result
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
     except KeyError as error:
@@ -247,10 +250,13 @@ async def backfill_source(
         requested_quantity=1,
     )
     services = get_slack_services(request)
-    result = await services.backfill.backfill_source(
-        workspace_id=workspace_id,
-        source_connection_id=source_connection_id,
-    )
+    try:
+        result = await services.backfill.backfill_source(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
     drain = None
     if services.auto_drain_pipeline:
         if not isinstance(services.event_bus, InMemoryEventBus):

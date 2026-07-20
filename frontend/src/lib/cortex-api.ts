@@ -1,4 +1,5 @@
-export type Provider = "slack" | "github";
+/** The backend accepts connector provider identifiers rather than a closed enum. */
+export type Provider = string;
 export type TaskContextStatus = "complete" | "partial" | "no_context" | "denied" | "failed";
 export type FreshnessStatus = "fresh" | "mixed" | "stale" | "unknown";
 
@@ -21,45 +22,51 @@ export type EvidenceItem = {
   provider: string;
   source_type: string;
   source_object_id: string;
-  label: string;
+  label: string | null;
   snippet: string;
-  citation_url: string;
-  source_updated_at: string;
-  last_synced_at: string;
+  citation_url: string | null;
+  source_updated_at: string | null;
+  last_synced_at: string | null;
   freshness: FreshnessStatus;
   retrieval_paths: string[];
   score_provenance: Record<string, unknown>;
-  content_hash: string;
-  source_version: string;
+  content_hash: string | null;
+  source_version: string | null;
 };
 
 export type TaskContextPayload = {
   evidence_items: EvidenceItem[];
   source_coverage: { providers_requested: string[]; providers_returned: string[]; evidence_item_count: number };
-  freshness: { status: FreshnessStatus; oldest_sync_at?: string; maximum_age_seconds: number };
-  conflicts: unknown[];
-  missing_context: unknown[];
+  freshness: { status: FreshnessStatus; oldest_sync_at?: string | null; maximum_age_seconds: number };
+  conflicts: Array<Record<string, unknown>>;
+  missing_context: Array<Record<string, unknown>>;
   retrieval: { status: string; lexical_candidate_count: number; vector_candidate_count: number; partial_reasons: string[] };
-  versions: { retrieval_config: string; chunking: string; embedding: string; index: string; ranker: string };
+  versions: Record<string, string>;
 };
 
 export type TaskContextSuccess = {
   contract_version: "cortex.task_context.v1";
   ok: true;
   status: "complete" | "partial" | "no_context";
-  request_id: string;
-  evidence_pack_id: string;
+  request_id: string | null;
+  evidence_pack_id: string | null;
   trace_id: string;
   live_data: boolean;
-  task_context: TaskContextPayload;
+  task_context: TaskContextPayload | null;
   warnings: string[];
+  error: null;
 };
 
 export type TaskContextFailure = {
   contract_version: "cortex.task_context.v1";
   ok: false;
   status: "denied" | "failed";
+  request_id: null;
+  evidence_pack_id: null;
   trace_id: string;
+  live_data: boolean;
+  task_context: null;
+  warnings: string[];
   error: { code: string; message: string; retryable: boolean; retry_after_seconds?: number };
 };
 
@@ -79,10 +86,22 @@ export async function cortexApi<T>(path: string, init?: RequestInit): Promise<T>
 
 /** The BFF is the only browser-facing path to the authenticated task-context API. */
 export function requestTaskContext(request: TaskContextRequest) {
-  return cortexApi<TaskContextResponse>("v1/task-context", {
+  return cortexApi<TaskContextResponse>("v1/context/task-context", {
     method: "POST",
     body: JSON.stringify(request),
   });
+}
+
+/** The evidence endpoint returns the persisted evidence-pack record, not a task-context DTO. */
+export type EvidencePackEnvelope = {
+  contract_version: "v1";
+  trace_id: string;
+  workspace_id: string;
+  evidence_pack: Record<string, unknown>;
+};
+
+export function getEvidencePack(evidencePackId: string) {
+  return cortexApi<EvidencePackEnvelope>(`v1/context/evidence/${encodeURIComponent(evidencePackId)}`);
 }
 
 export type RuntimeHealth = { status: string; checks?: Record<string, string>; issues?: Array<{ field: string; code: string; message: string }> };
