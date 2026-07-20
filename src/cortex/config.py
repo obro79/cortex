@@ -1,8 +1,9 @@
 import os
 from functools import lru_cache
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -139,6 +140,9 @@ class Settings(BaseSettings):
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
     qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
+    qdrant_collection_prefix: str = Field(
+        default="cortex", alias="QDRANT_COLLECTION_PREFIX"
+    )
     redis_url: str = Field(default="", alias="REDIS_URL")
     otel_exporter_otlp_endpoint: str = Field(
         default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
@@ -188,6 +192,65 @@ class Settings(BaseSettings):
 
     def sanitized_dict(self) -> dict[str, Any]:
         return redact_mapping(self.model_dump(mode="json"))
+
+    @field_validator("qdrant_url")
+    @classmethod
+    def validate_qdrant_url(cls, value: str) -> str:
+        value = value.rstrip("/")
+        if not value:
+            return value
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("QDRANT_URL must be an absolute http(s) URL")
+        if parsed.query or parsed.fragment or parsed.username or parsed.password:
+            raise ValueError(
+                "QDRANT_URL must not contain credentials, query, or fragment"
+            )
+        return value
+
+    @field_validator("qdrant_collection_prefix")
+    @classmethod
+    def validate_qdrant_collection_prefix(cls, value: str) -> str:
+        from cortex.indexing.qdrant import validate_collection_name
+
+        validate_collection_name(value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_hosted_qdrant_credentials(self) -> "Settings":
+        if (
+            self.qdrant_url
+            and not _is_local_qdrant_url(self.qdrant_url)
+            and not self.qdrant_api_key.strip()
+        ):
+            raise ValueError("QDRANT_API_KEY is required for hosted QDRANT_URL")
+        return self
+
+    def qdrant_collection_name(
+        self,
+        *,
+        embedding_model: str,
+        embedding_version: str,
+        dimensions: int,
+    ) -> str:
+        """Build the environment/model/version collection name used by Qdrant.
+
+        Callers must provide stable model and version identifiers; this method
+        intentionally validates rather than silently rewriting those identities.
+        """
+        name = (
+            f"{self.qdrant_collection_prefix}-{self.cortex_env}-"
+            f"{embedding_model}-{embedding_version}-{dimensions}"
+        )
+        from cortex.indexing.qdrant import validate_collection_name
+
+        validate_collection_name(name)
+        return name
+
+
+def _is_local_qdrant_url(value: str) -> bool:
+    host = urlparse(value).hostname
+    return host in {"localhost", "127.0.0.1", "::1", "qdrant", "host.docker.internal"}
 
 
 @lru_cache
