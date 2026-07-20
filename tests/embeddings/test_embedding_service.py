@@ -76,3 +76,25 @@ async def test_embedding_service_enforces_model_rate_limit(
     assert completed.vector_hash is not None
     with pytest.raises(RateLimitExceededError):
         await service.complete(second.record.id)
+
+
+async def test_embedding_service_persists_composed_vector_collection(
+    phase4_source_object: SourceObject,
+) -> None:
+    source_chunks = InMemorySourceChunkRepository()
+    chunk = SourceAwareChunker(
+        load_retrieval_config().chunking
+    ).chunks_for_source_object(phase4_source_object)[0]
+    source_chunks.upsert_many([chunk])
+    service = EmbeddingService(
+        source_chunks=source_chunks,
+        embeddings=InMemoryEmbeddingRecordRepository(),
+        provider=DeterministicEmbeddingProvider(dimensions=8, version="emb-v1"),
+        publisher=EmbeddingPublisher(InMemoryEventBus()),
+        vector_collection="cortex-test-fixture-vector-v1-emb-v1-8",
+    )
+
+    queued = await service.queue_for_chunk(chunk.id)
+    completed = await service.complete(queued.record.id)
+
+    assert completed.qdrant_collection == "cortex-test-fixture-vector-v1-emb-v1-8"
