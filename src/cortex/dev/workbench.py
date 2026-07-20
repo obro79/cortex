@@ -46,6 +46,7 @@ class DevWorkbenchService:
         self.runs: dict[str, dict[str, Any]] = {}
         self.evidence_packs: dict[str, dict[str, Any]] = {}
         self.latest_query: dict[str, Any] | None = None
+        self.latest_gate_status: str | None = None
         self.latest_eval: dict[str, Any] | None = None
         self._run_count = 0
 
@@ -55,6 +56,7 @@ class DevWorkbenchService:
         self.runs.clear()
         self.evidence_packs.clear()
         self.latest_query = None
+        self.latest_gate_status = None
         self.latest_eval = None
         self._run_count = 0
         return {"status": "reset", "state": self.state_summary()}
@@ -75,7 +77,9 @@ class DevWorkbenchService:
         runner = FixturePipelineRunner(self.repository, self.event_bus)
         run = await runner.run(self._run_count)
         self.runs[run["run_id"]] = run
-        self.evidence_packs[EVIDENCE_PACK_ID] = build_evidence_pack(self.repository)
+        evidence_pack = build_evidence_pack(self.repository)
+        self.evidence_packs[EVIDENCE_PACK_ID] = evidence_pack
+        self.latest_gate_status = evidence_pack["gate_result"]["status"]
         return run
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -91,6 +95,7 @@ class DevWorkbenchService:
             )
         result = DeterministicRetriever(self.repository).query(query)
         self.latest_query = result
+        self.latest_gate_status = result["gate_status"]
         self.evidence_packs[EVIDENCE_PACK_ID] = build_evidence_pack(self.repository)
         return result
 
@@ -113,9 +118,7 @@ class DevWorkbenchService:
             "fixture_counts": self.repository.summary()["counts"],
             "latest_run_id": latest_run["run_id"] if latest_run else None,
             "latest_run_status": latest_run["status"] if latest_run else None,
-            "latest_gate_status": (
-                self.latest_query["gate_status"] if self.latest_query else None
-            ),
+            "latest_gate_status": self.latest_gate_status,
             "event_count": len(self.event_bus.list_events()),
             "evidence_pack_ids": sorted(self.evidence_packs),
         }
@@ -169,7 +172,7 @@ class DevWorkbenchService:
 <body>
 <main>
   <h1>Cortex Dev Workbench</h1>
-  <p>Dev-only deterministic COR-123 fixture harness.</p>
+  <p>Fixture-only COR-123 harness; never live provider data.</p>
   {empty}
   <section>
     <h2>Controls</h2>
@@ -178,12 +181,9 @@ class DevWorkbenchService:
     </button>
     <button type="button" onclick="postJson('/dev/fixtures/reset')">Reset</button>
     <button type="button" onclick="postJson('/dev/pipeline/run')">Run Pipeline</button>
-    <button type="button" onclick="queryRetrieval()">Query COR-123</button>
+    <button type="button" onclick="queryRetrieval()">Load COR-123 context</button>
     <button type="button" onclick="postJson('/dev/evals/run')">Run Evals</button>
-    <p>
-      <input id="query" size="72"
-        value="COR-123 session migration constraints">
-    </p>
+    <p>Prepared COR-123 query only; freeform search unavailable.</p>
     <pre id="control-output" aria-live="polite"></pre>
   </section>
   <section>
@@ -219,8 +219,9 @@ async function postJson(path, body = {{}}) {{
   output.textContent = JSON.stringify(data, null, 2);
 }}
 async function queryRetrieval() {{
-  const query = document.getElementById('query').value;
-  await postJson('/dev/retrieval/query', {{query}});
+  await postJson('/dev/retrieval/query', {{
+    query: 'COR-123 session migration constraints'
+  }});
 }}
 </script>
 </body>

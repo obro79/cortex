@@ -56,6 +56,10 @@ def test_pipeline_query_evidence_and_eval_endpoints() -> None:
         "gate",
     ]
 
+    state_after_run = client.get("/dev/state")
+    assert state_after_run.status_code == 200
+    assert state_after_run.json()["gate"]["latest_status"] == "block"
+
     run_read = client.get(f"/dev/pipeline/runs/{run_body['run_id']}")
     assert run_read.status_code == 200
     assert run_read.json()["trace_id"] == "trace-run-cor-123-001"
