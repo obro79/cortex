@@ -219,6 +219,43 @@ async def test_github_webhook_rejects_when_secret_is_not_configured() -> None:
     assert result == {"ok": False, "status": "invalid_signature"}
 
 
+async def test_github_selection_is_workspace_scoped_and_removal_blocks_webhooks() -> (
+    None
+):
+    services = GitHubConnectorServices(app_configured=True, webhook_secret="secret")
+    services.select_repos(
+        workspace_id="ws_1",
+        repos=[{"id": "44", "source_connection_id": "src_1"}],
+    )
+    body = json.dumps({"repository": {"id": 44}}).encode()
+    signature = "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+
+    cross_workspace = await services.webhook(
+        workspace_id="ws_2",
+        source_connection_id="src_1",
+        body=body,
+        signature=signature,
+        event_name="push",
+        delivery_id="ws-2-delivery",
+    )
+    removed = services.remove_repo(
+        workspace_id="ws_1", repo_id="44", source_connection_id="src_1"
+    )
+    after_removal = await services.webhook(
+        workspace_id="ws_1",
+        source_connection_id="src_1",
+        body=body,
+        signature=signature,
+        event_name="push",
+        delivery_id="removed-delivery",
+    )
+
+    assert cross_workspace["status"] == "ignored_unselected"
+    assert removed["status"] == "removed"
+    assert after_removal["status"] == "ignored_unselected"
+    assert services.health("ws_1")["selected_source_count"] == 0
+
+
 async def test_repo_docs_import_hashes_and_skips_unchanged_docs() -> None:
     services = RepoDocsConnectorServices()
     services.select_roots(workspace_id="ws_1", roots=[{"path": "docs"}])

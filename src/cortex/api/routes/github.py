@@ -73,6 +73,29 @@ async def select_repos(
     )
 
 
+@router.delete("/sources/{repo_id}")
+async def remove_repo(
+    request: Request,
+    repo_id: str,
+    workspace_id: str,
+    source_connection_id: str | None = None,
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
+) -> dict[str, object]:
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.SOURCE_SELECT,
+    )
+    result = get_github_services(request).remove_repo(
+        workspace_id=workspace_id,
+        repo_id=repo_id,
+        source_connection_id=source_connection_id,
+    )
+    if result.get("ok") is not True:
+        raise HTTPException(status_code=409, detail=result)
+    return result
+
+
 @router.post("/backfill/{source_connection_id}")
 async def backfill(
     request: Request,

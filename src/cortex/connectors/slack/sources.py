@@ -95,3 +95,22 @@ class SlackSourceSelectionService:
                 source.model_dump(mode="json") for source in selected
             ],
         }
+
+    async def deselect_channel(
+        self, *, workspace_id: str, source_connection_id: str
+    ) -> dict[str, object]:
+        source = await maybe_await(
+            self.source_connections.get_by_id(source_connection_id)
+        )
+        if source.workspace_id != workspace_id:
+            raise PermissionError("workspace_mismatch")
+        disabled = await maybe_await(
+            self.source_connections.disable_channel(
+                workspace_id=workspace_id, source_connection_id=source_connection_id
+            )
+        )
+        return {
+            "ok": True,
+            "status": "disabled",
+            "source_connection": disabled.model_dump(mode="json"),
+        }
