@@ -1,6 +1,7 @@
 from cortex.connectors.slack.client import SlackHistoryPage
 from cortex.connectors.slack.service import create_slack_connector_services
 from cortex.contracts.enums import SourceConnectionStatus
+from cortex.permissions.scopes import scope_external_id_hash
 
 from .helpers import installed_selected_services
 
@@ -41,6 +42,11 @@ async def test_selected_channels_create_source_connections_without_names() -> No
     assert source["display_name_hash"].startswith("sha256:")
     assert "private-roadmap" not in str(source)
     assert services.source_connections.get_selected_channel("ws_1", "C123") is not None
+    scopes = services.permission_scope_repository.list_active("ws_1")
+    assert len(scopes) == 1
+    assert scopes[0].external_id_hash == scope_external_id_hash(
+        "slack", "slack_channel", "C123"
+    )
 
 
 async def test_selection_rejects_workspace_mismatch() -> None:
@@ -64,6 +70,8 @@ async def test_selection_rejects_workspace_mismatch() -> None:
         services.source_connections.get_selected_channel("ws_internal", "C123") is None
     )
     assert services.source_connections.get_selected_channel("T_TEST", "C123") is None
+    assert services.permission_scope_repository.list_active("ws_internal") == []
+    assert services.permission_scope_repository.list_active("T_TEST") == []
 
 
 async def test_unselected_channel_lookup_returns_none() -> None:
@@ -113,6 +121,7 @@ async def test_deselect_channel_disables_source_and_prevents_selected_lookup() -
     assert result["source_connection"]["selected"] is False
     assert result["source_connection"]["status"] == SourceConnectionStatus.DISABLED
     assert services.source_connections.get_selected_channel("ws_1", "C123") is None
+    assert services.permission_scope_repository.list_active("ws_1") == []
     assert removed == [("ws_1", source_id)]
 
 
@@ -127,3 +136,4 @@ async def test_deselect_fails_closed_without_cleanup_callback() -> None:
     assert result["ok"] is False
     assert result["status"] == "removal_cleanup_unavailable"
     assert services.source_connections.get_selected_channel("ws_1", "C123") is not None
+    assert len(services.permission_scope_repository.list_active("ws_1")) == 1
