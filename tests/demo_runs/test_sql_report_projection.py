@@ -162,12 +162,31 @@ async def test_sql_report_projection_refuses_conflicting_replay() -> None:
         report=report,
     )
 
-    with pytest.raises(DemoRunReportProjectionError, match="immutable"):
+    with pytest.raises(DemoRunReportProjectionError, match="append-only"):
         await repository.record_report(
             workspace_id="ws_1",
             source_connection_id="source_conn_1",
             report=report.model_copy(update={"outcome": "partial"}),
         )
+
+
+async def test_sql_report_projection_revalidates_constructed_models_before_write() -> (
+    None
+):
+    session = _ReportSession()
+    repository = SqlAlchemyDemoRunReportRepository(session)  # type: ignore[arg-type]
+    unsafe_payload = dict(_report().__dict__)
+    unsafe_payload["disclosure"] = "xoxb-live-token-must-not-persist"
+    unsafe = DemoRunReport.model_construct(**unsafe_payload)
+
+    with pytest.raises(DemoRunReportProjectionError, match="redacted v1"):
+        await repository.record_report(
+            workspace_id="ws_1",
+            source_connection_id="source_conn_1",
+            report=unsafe,
+        )
+
+    assert session.records == {}
 
 
 async def test_sql_report_reader_is_workspace_scoped_and_fails_closed() -> None:

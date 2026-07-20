@@ -26,7 +26,7 @@ def stable_demo_run_report_id(workspace_id: str, run_id_hash: str) -> str:
 
 
 class SqlAlchemyDemoRunReportRepository:
-    """Caller-owned SQL repository for immutable redacted run reports.
+    """Caller-owned SQL repository for append-only redacted run reports.
 
     No method here performs provider, Qdrant, or retrieval calls. A trusted
     finalizer supplies an already-validated aggregate report after it has
@@ -45,7 +45,7 @@ class SqlAlchemyDemoRunReportRepository:
         report: DemoRunReport,
         completed_at: datetime | None = None,
     ) -> DemoRunReport:
-        """Persist one immutable snapshot, accepting only an identical replay."""
+        """Persist one append-only snapshot, accepting only an identical replay."""
         if not workspace_id or len(workspace_id) > 128:
             raise ValueError("workspace_id must be between 1 and 128 characters")
         if not source_connection_id or len(source_connection_id) > 128:
@@ -54,6 +54,7 @@ class SqlAlchemyDemoRunReportRepository:
             )
         if completed_at is not None and completed_at.tzinfo is None:
             raise ValueError("completed_at must be timezone-aware")
+        report = _revalidate_report(report)
 
         report_id = stable_demo_run_report_id(workspace_id, report.run_id_hash)
         existing = await self.session.get(DemoRunReportRecord, report_id)
@@ -163,6 +164,16 @@ def _validated_report_from_record(
     return report
 
 
+def _revalidate_report(report: DemoRunReport) -> DemoRunReport:
+    """Reject unsafe ``model_construct``/``model_copy`` values before a write."""
+    try:
+        return DemoRunReport.model_validate(report.model_dump(mode="json"))
+    except (TypeError, ValidationError, ValueError) as error:
+        raise DemoRunReportProjectionError(
+            "report does not satisfy the redacted v1 contract"
+        ) from error
+
+
 def _identical_report_or_raise(
     record: DemoRunReportRecord,
     *,
@@ -172,5 +183,5 @@ def _identical_report_or_raise(
 ) -> DemoRunReport:
     persisted = _validated_report_from_record(record, workspace_id=workspace_id)
     if record.source_connection_id != source_connection_id or persisted != report:
-        raise DemoRunReportProjectionError("immutable run report conflict")
+        raise DemoRunReportProjectionError("append-only run report conflict")
     return persisted

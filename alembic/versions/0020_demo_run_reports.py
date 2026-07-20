@@ -1,4 +1,4 @@
-"""add immutable redacted demo run report projection
+"""add append-only redacted demo run report projection
 
 Revision ID: 0020_demo_run_reports
 Revises: 0019_provider_acl_current_unique
@@ -17,7 +17,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Persist validated, content-free controlled-run report snapshots."""
+    """Persist validated, content-free controlled-run report snapshots.
+
+    Application code has no update path for these rows. Deployment must grant
+    the runtime writer only INSERT/SELECT privileges if database-level
+    append-only enforcement is required.
+    """
     op.create_table(
         "demo_run_reports",
         sa.Column("id", sa.String(length=128), primary_key=True),

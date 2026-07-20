@@ -4,6 +4,8 @@ import json
 import runpy
 from pathlib import Path
 
+from cortex.demo_runs import DemoRunReport
+
 SCRIPT = Path(__file__).parents[2] / "scripts" / "live_context_preflight.py"
 FIXTURE = (
     Path(__file__).parents[2]
@@ -101,6 +103,7 @@ def test_live_run_report_fixture_matches_redacted_json_contract() -> None:
     report = json.loads(FIXTURE.read_text())
 
     assert module["validate_live_run_report"](report) == []
+    assert DemoRunReport.model_validate(report).model_dump(mode="json") == report
 
     report["query"] = "must not be accepted"
     assert "unexpected field: query" in module["validate_live_run_report"](report)
@@ -126,3 +129,15 @@ def test_live_run_report_rejects_unsafe_stage_or_display_text() -> None:
 
     assert "stage names must be bounded lowercase status codes" in errors
     assert "next_action must not contain a URL-like value" in errors
+
+
+def test_live_run_report_rejects_unapproved_free_text() -> None:
+    module = _module()
+    report = json.loads(FIXTURE.read_text())
+    report["disclosure"] = "Slack message body: launch Thursday"
+    report["next_action"] = "xoxb-live-token"
+
+    errors = module["validate_live_run_report"](report)
+
+    assert "disclosure must be an approved disclosure message" in errors
+    assert "next_action must be an approved next action" in errors

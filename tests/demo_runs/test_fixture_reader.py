@@ -120,6 +120,9 @@ def test_live_report_rejects_unsafe_stage_codes(stages: dict[str, str]) -> None:
         ("disclosure", "Read https://example.test for details"),
         ("disclosure", "line one\nline two"),
         ("next_action", "Visit www.example.test"),
+        ("disclosure", "Slack message body: launch Thursday"),
+        ("disclosure", "xoxb-not-a-safe-disclosure"),
+        ("next_action", "github_pat_not-a-safe-next-action"),
     ],
 )
 def test_live_report_rejects_url_like_or_multiline_display_text(

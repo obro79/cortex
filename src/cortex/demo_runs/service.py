@@ -34,8 +34,8 @@ class SqlAlchemyDemoRunReportStore:
     """Session-factory adapter for trusted finalizers and read-only API views.
 
     The store does not synthesize a report from mutable workspace-wide tables.
-    Its write method is an internal seam for a future exact membership-aware
-    finalizer; no browser or MCP write route is exposed.
+    Its append-only write method is an internal seam for a future exact
+    membership-aware finalizer; no browser or MCP write route is exposed.
     """
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:

@@ -199,12 +199,15 @@ an explicit mode label, and one evidence card deep-links to its cited record.
 
 #### Implementation boundary — 2026-07-20
 
-The credential-free slice now contains a durable, immutable
-`demo_run_reports` SQL projection and a read-only workspace-scoped reader. It
+The credential-free slice now contains a durable, append-only
+application-level `demo_run_reports` SQL projection and a read-only
+workspace-scoped reader. It
 stores only a validated `live-context-run-report/v1` JSON snapshot plus opaque
 hashes, aggregate metadata, and Cortex's internal source-connection ID. It
 does not expose a browser/MCP write route, call a provider/Qdrant while reading,
-or fall back to a previous report if the newest snapshot is malformed.
+or fall back to a previous report if the newest snapshot is malformed. The
+runtime has no update route for these records; a production deployment should
+also restrict the database writer role to insert/select for this table.
 
 That is intentionally **not yet an automatic exact-count ledger**. Current
 canonical rows do not all carry a common controlled-run identity, so deriving a

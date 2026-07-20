@@ -64,10 +64,15 @@ async def _status(
             report=None,
             issues=(_UNAVAILABLE,),
         )
-    report = await reader.latest_report(
-        workspace_id=context.workspace_id,
-        trace_id=trace.trace_id,
-    )
+    try:
+        report = await reader.latest_report(
+            workspace_id=context.workspace_id,
+            trace_id=trace.trace_id,
+        )
+    except Exception:
+        # This is a safe status surface. A projection/database failure must not
+        # leak implementation detail or turn a missing report into an API 500.
+        report = None
     if report is None:
         return trace_id_hash, DemoRunReportStatus(
             trace_id_hash=trace_id_hash,
@@ -109,10 +114,13 @@ async def source_health(
             freshness="unknown",
             issues=(_UNAVAILABLE,),
         )
-    sources = await reader.source_health(
-        workspace_id=context.workspace_id,
-        trace_id=trace.trace_id,
-    )
+    try:
+        sources = await reader.source_health(
+            workspace_id=context.workspace_id,
+            trace_id=trace.trace_id,
+        )
+    except Exception:
+        sources = None
     if sources is None:
         return SourceHealthStatus(
             trace_id_hash=trace_id_hash,

@@ -45,10 +45,12 @@ The output includes a redacted `DemoRunReport` to prove ingestion/index/query
 counts and a source mode (`live`, `imported_snapshot`, or `fixture`) to make
 demo claims auditable.
 
-The first credential-free implementation is an immutable SQL projection of a
-validated, redacted report. It is intentionally not a reconstruction from
-mutable workspace-wide state: an exact automatic report requires a later
-run-membership ledger propagated through every pipeline and query stage.
+The first credential-free implementation is an append-only application-level
+SQL projection of a validated, redacted report. It is intentionally not a
+reconstruction from mutable workspace-wide state: an exact automatic report
+requires a later run-membership ledger propagated through every pipeline and
+query stage. Production deployment should restrict the report writer role to
+insert/select access.
 
 ## Alternatives considered
 

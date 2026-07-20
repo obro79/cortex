@@ -556,14 +556,16 @@ class IndexJobRecord(Base):
 
 
 class DemoRunReportRecord(Base):
-    """Immutable, redacted proof projection for a controlled live run.
+    """Append-only application projection for a controlled live run.
 
     The canonical ingestion/retrieval tables intentionally retain operational
     material that must never be serialized into a demo surface. This table is
     the small durable boundary between a trusted run finalizer and the
     read-only control plane: it stores internal source linkage plus a
     pre-validated public report, never source content, provider identifiers,
-    query text, evidence JSON, or credentials.
+    query text, evidence JSON, or credentials. The application never exposes
+    an update path; production deployment should further restrict the writer
+    database role to insert/select for this table.
     """
 
     __tablename__ = "demo_run_reports"

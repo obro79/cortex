@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlparse
 
+from cortex.demo_runs.contracts import (
+    APPROVED_REPORT_DISCLOSURES,
+    APPROVED_REPORT_NEXT_ACTIONS,
+)
+
 REPORT_SCHEMA_VERSION: Final = "live-context-preflight/v1"
 LIVE_REPORT_SCHEMA_VERSION: Final = "live-context-run-report/v1"
 ROOT = Path(__file__).resolve().parents[1]
@@ -285,6 +290,10 @@ def validate_live_run_report(report: object) -> list[str]:
             errors.append(f"{field} must be a single-line string")
         elif _URL_LIKE.search(value):
             errors.append(f"{field} must not contain a URL-like value")
+        elif field == "disclosure" and value not in APPROVED_REPORT_DISCLOSURES:
+            errors.append("disclosure must be an approved disclosure message")
+        elif field == "next_action" and value not in APPROVED_REPORT_NEXT_ACTIONS:
+            errors.append("next_action must be an approved next action")
     if "freshness_seconds" in report and (
         not isinstance(report["freshness_seconds"], int)
         or report["freshness_seconds"] < 0

@@ -18,6 +18,23 @@ Readiness = Literal["ready", "partial", "not_ready", "unavailable"]
 Freshness = Literal["fresh", "stale", "unknown"]
 Outcome = Literal["passed", "failed", "partial"]
 IssueSeverity = Literal["warning", "error"]
+APPROVED_REPORT_DISCLOSURES = frozenset(
+    {
+        "Aggregate counts and opaque hashes only.",
+        "Counts and opaque hashes only.",
+        (
+            "Counts and opaque hashes only; no provider content, credentials, "
+            "raw IDs, URLs, or query text are included."
+        ),
+    }
+)
+APPROVED_REPORT_NEXT_ACTIONS = frozenset(
+    {
+        "Archive this report with the demo evidence packet.",
+        "Inspect the redacted operator logs before recording.",
+        "Re-run the controlled proof after correcting the reported stage.",
+    }
+)
 type OpaqueHash = Annotated[
     str,
     Field(
@@ -89,13 +106,24 @@ class DemoRunReport(_ContractModel):
     disclosure: str = Field(min_length=1, max_length=400)
     next_action: str | None = Field(default=None, max_length=400)
 
-    @field_validator("disclosure", "next_action")
+    @field_validator("disclosure")
     @classmethod
-    def _safe_display_text(cls, value: str | None) -> str | None:
+    def _safe_disclosure(cls, value: str) -> str:
+        if "\n" in value or "\r" in value or _URL_LIKE.search(value):
+            raise ValueError("must not contain a newline or URL-like value")
+        if value not in APPROVED_REPORT_DISCLOSURES:
+            raise ValueError("must be an approved disclosure message")
+        return value
+
+    @field_validator("next_action")
+    @classmethod
+    def _safe_next_action(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if "\n" in value or "\r" in value or _URL_LIKE.search(value):
             raise ValueError("must not contain a newline or URL-like value")
+        if value not in APPROVED_REPORT_NEXT_ACTIONS:
+            raise ValueError("must be an approved next action")
         return value
 
 

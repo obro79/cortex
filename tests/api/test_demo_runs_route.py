@@ -87,3 +87,19 @@ def test_sql_state_registers_durable_report_store_without_connecting() -> None:
 
     assert isinstance(app.state.demo_run_report_store, SqlAlchemyDemoRunReportStore)
     assert app.state.demo_run_report_reader is app.state.demo_run_report_store
+
+
+class _FailingDemoRunReader:
+    async def latest_report(self, *, workspace_id: str, trace_id: str) -> None:
+        del workspace_id, trace_id
+        raise RuntimeError("database password must not be returned")
+
+
+def test_latest_demo_run_fails_closed_when_reader_errors() -> None:
+    client, headers = _client(reader=_FailingDemoRunReader())
+
+    response = client.get("/v1/demo-runs/latest", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+    assert "database password" not in response.text
