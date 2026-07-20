@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { ChapterLabel } from "@/components/chapter-label";
-import { SourcePill } from "@/components/product/source-pill";
 import { TrustSignal } from "@/components/product/trust-signal";
-import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   return (
@@ -17,14 +15,7 @@ export default function LoginPage() {
             Cortex context is scoped to a workspace and checked against source
             permissions before it reaches an agent.
           </p>
-          <div className="mt-8 space-y-3">
-            <Button className="w-full">
-              Continue with email
-            </Button>
-            <Button className="w-full" variant="outline">
-              Continue with SSO
-            </Button>
-          </div>
+          <div className="mt-8 rounded-md border border-amber-400/30 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">Local fixture mode has no login or SSO flow. Open the control plane directly to inspect only synthetic fixture data.</div>
           <Link
             className="mt-6 inline-flex text-sm text-muted-foreground hover:text-foreground"
             href="/"
@@ -40,10 +31,6 @@ export default function LoginPage() {
               <TrustSignal label="Workspace" value="Active membership context" />
               <TrustSignal label="Sources" value="Slack, GitHub, Linear, docs" />
               <TrustSignal label="Output" value="Cited context bundle" />
-            </div>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <SourcePill name="workspace-scoped" tone="green" />
-              <SourcePill name="permission-aware" tone="blue" />
             </div>
           </div>
         </div>

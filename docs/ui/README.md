@@ -23,6 +23,21 @@ request, inspect, verify, and trace back to source truth.
 - [Image Asset Prompts](image-asset-prompts.md): GPT image prompt inventory and
   guidance for which visuals should stay CSS-built product UI.
 
+## Local Control Plane (implemented slice)
+
+The local Next control plane begins at `/ui/context` and is deliberately a
+fixture-only surface. It carries the persistent `SYNTHETIC FIXTURES · NOT LIVE`
+disclosure, has no login/SSO simulation or general chat, and allows only these
+local FastAPI operations through its same-origin BFF:
+
+- `GET /health/live`, `GET /health/ready`, and optional `GET /dev/state`
+- fixture seed/reset, pipeline run/status, focused retrieval, and an evidence
+  pack by known ID
+
+The BFF rejects all other paths and methods. `/ui/evidence/:id`,
+`/ui/pipeline/:id`, `/ui/health`, and `/ui/mcp` are scoped companion routes;
+they do not claim live connector data or arbitrary source exploration.
+
 ## Product Principle
 
 The first authenticated UI surface is the context console, not a dashboard. A
