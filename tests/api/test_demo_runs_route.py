@@ -3,16 +3,21 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from cortex.api.app import create_app
-from cortex.api.routes.demo_runs import router
 from cortex.auth.dependencies import AUTH_EMAIL_HEADER
 from cortex.config import Settings
 from cortex.demo_runs import FixtureDemoRunReportReader
 from cortex.ui.auth import WORKSPACE_ID_HEADER
 
 
-def _client(*, reader: object | None = None) -> tuple[TestClient, dict[str, str]]:
-    app = create_app(Settings(cortex_public_auth_enabled=True))
-    app.include_router(router)
+def _client(
+    *, reader: object | None = None, dev_workbench: bool = False
+) -> tuple[TestClient, dict[str, str]]:
+    app = create_app(
+        Settings(
+            cortex_public_auth_enabled=True,
+            cortex_dev_workbench_enabled=dev_workbench,
+        )
+    )
     if reader is not None:
         app.state.demo_run_report_reader = reader
     repository = app.state.tenant_repository
@@ -60,3 +65,13 @@ def test_source_health_returns_fixture_projection_without_live_report() -> None:
     assert body["readiness"] == "partial"
     assert body["freshness"] == "fresh"
     assert {source["mode"] for source in body["sources"]} == {"fixture"}
+
+
+def test_local_workbench_registers_fixture_source_health() -> None:
+    client, headers = _client(dev_workbench=True)
+
+    response = client.get("/v1/demo-runs/source-health", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    assert {source["mode"] for source in response.json()["sources"]} == {"fixture"}

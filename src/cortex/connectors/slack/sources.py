@@ -72,6 +72,7 @@ class SlackSourceSelectionService:
         workspace_id: str,
         oauth_installation_id: str,
         channels: list[dict[str, str]],
+        actor_id: str | None = None,
     ) -> dict[str, object]:
         installation = await maybe_await(
             self.installations.get_by_id(oauth_installation_id)
@@ -99,6 +100,7 @@ class SlackSourceSelectionService:
                     provider="slack",
                     scope_type="slack_channel",
                     external_id=channel_id,
+                    actor_id=actor_id,
                 )
             )
             selected.append(source)
@@ -110,7 +112,11 @@ class SlackSourceSelectionService:
         }
 
     async def deselect_channel(
-        self, *, workspace_id: str, source_connection_id: str
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str,
+        actor_id: str | None = None,
     ) -> dict[str, object]:
         source = await maybe_await(
             self.source_connections.get_by_id(source_connection_id)
@@ -132,6 +138,7 @@ class SlackSourceSelectionService:
                 provider="slack",
                 scope_type="slack_channel",
                 external_id=source.external_source_id,
+                actor_id=actor_id,
             )
         )
         disabled = await maybe_await(

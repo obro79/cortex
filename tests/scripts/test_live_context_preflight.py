@@ -104,3 +104,25 @@ def test_live_run_report_fixture_matches_redacted_json_contract() -> None:
 
     report["query"] = "must not be accepted"
     assert "unexpected field: query" in module["validate_live_run_report"](report)
+
+
+def test_live_run_report_rejects_non_sha256_opaque_hashes() -> None:
+    module = _module()
+    report = json.loads(FIXTURE.read_text())
+    report["run_id_hash"] = "sha256:short"
+
+    assert "run_id_hash must be an opaque sha256 hash" in module[
+        "validate_live_run_report"
+    ](report)
+
+
+def test_live_run_report_rejects_unsafe_stage_or_display_text() -> None:
+    module = _module()
+    report = json.loads(FIXTURE.read_text())
+    report["stages"] = {"SlackBackfill": "completed"}
+    report["next_action"] = "See https://example.test"
+
+    errors = module["validate_live_run_report"](report)
+
+    assert "stage names must be bounded lowercase status codes" in errors
+    assert "next_action must not contain a URL-like value" in errors

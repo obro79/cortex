@@ -71,6 +71,14 @@ class ProviderAclDecision:
     snapshot_id: str | None = None
 
 
+class ProviderAclSnapshotIntegrityError(RuntimeError):
+    """Raised when more than one authoritative ACL exists for a resource.
+
+    Callers must fail closed rather than picking whichever row happened to be
+    returned first, which could resurrect a revoked principal.
+    """
+
+
 @dataclass(frozen=True)
 class ProviderPrincipalMapping:
     id: str
@@ -149,10 +157,13 @@ class InMemoryProviderAclRepository:
     ) -> InMemoryProviderAclRepository:
         """Create a read-only-in-practice authorization snapshot from SQL rows."""
         repository = cls()
-        repository._snapshots = {
-            _snapshot_key(snapshot.workspace_id, snapshot.resource): snapshot
-            for snapshot in snapshots
-        }
+        for snapshot in snapshots:
+            key = _snapshot_key(snapshot.workspace_id, snapshot.resource)
+            if key in repository._snapshots:
+                raise ProviderAclSnapshotIntegrityError(
+                    "duplicate_current_provider_acl_snapshot"
+                )
+            repository._snapshots[key] = snapshot
         return repository
 
 
@@ -242,9 +253,14 @@ class SqlAlchemyProviderAclRepository:
                 ProviderAclSnapshotRecord.is_current.is_(True),
             )
         )
-        record = result.scalar_one_or_none()
-        if record is None:
+        records = list(result.scalars())
+        if not records:
             return None
+        if len(records) != 1:
+            raise ProviderAclSnapshotIntegrityError(
+                "duplicate_current_provider_acl_snapshot"
+            )
+        record = records[0]
         entries_result = await self.session.execute(
             select(ProviderAclEntryRecord).where(
                 ProviderAclEntryRecord.snapshot_id == record.id
@@ -267,6 +283,19 @@ class SqlAlchemyProviderAclRepository:
         records = list(snapshots_result.scalars())
         if not records:
             return []
+        seen_resources: set[tuple[str, str, str, str]] = set()
+        for record in records:
+            key = (
+                record.workspace_id,
+                record.provider,
+                record.resource_type,
+                record.resource_id_hash,
+            )
+            if key in seen_resources:
+                raise ProviderAclSnapshotIntegrityError(
+                    "duplicate_current_provider_acl_snapshot"
+                )
+            seen_resources.add(key)
         entries_result = await self.session.execute(
             select(ProviderAclEntryRecord).where(
                 ProviderAclEntryRecord.snapshot_id.in_(

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -950,6 +951,19 @@ class ProviderAclSnapshotRecord(Base):
             "resource_type",
             "resource_id_hash",
             "is_current",
+        ),
+        # A resource can have many historical snapshots but exactly one
+        # authoritative current snapshot. The partial unique index closes the
+        # update-then-insert race in ACL refreshes without preventing history.
+        Index(
+            "uq_provider_acl_snapshots_current_resource",
+            "workspace_id",
+            "provider",
+            "resource_type",
+            "resource_id_hash",
+            unique=True,
+            postgresql_where=text("is_current"),
+            sqlite_where=text("is_current = 1"),
         ),
         Index("ix_provider_acl_snapshots_expires", "workspace_id", "expires_at"),
     )

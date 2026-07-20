@@ -143,6 +143,10 @@ def test_slack_source_selection_route() -> None:
     assert selected.status_code == 200
     assert selected.json()["source_connections"][0]["external_source_id"] == "C123"
     assert "private-roadmap" not in selected.text
+    scope = app.app.state.slack_connector.permission_scope_repository.list_active(
+        workspace_id
+    )[0]
+    assert scope.created_by_actor_id in app.app.state.tenant_repository.users
 
 
 def test_slack_source_selection_requires_workspace_membership() -> None:

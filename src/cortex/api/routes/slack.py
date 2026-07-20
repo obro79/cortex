@@ -157,6 +157,7 @@ async def select_sources(
             workspace_id=workspace_id,
             oauth_installation_id=installation_id,
             channels=[dict(channel) for channel in channels],
+            actor_id=context.user_id,
         )
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
@@ -218,6 +219,7 @@ async def deselect_source(
         result = await get_slack_services(request).sources.deselect_channel(
             workspace_id=workspace_id,
             source_connection_id=source_connection_id,
+            actor_id=context.user_id,
         )
         if result.get("ok") is not True:
             raise HTTPException(status_code=409, detail=result)

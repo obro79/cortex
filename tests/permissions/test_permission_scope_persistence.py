@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from cryptography.fernet import Fernet
 
 from cortex.config import Settings
@@ -17,7 +18,10 @@ from cortex.db.models import (
     ProviderAclSnapshotRecord,
 )
 from cortex.ingestion.payloads import sha256_digest
-from cortex.permissions.provider_acls import ProviderAclPrincipal
+from cortex.permissions.provider_acls import (
+    ProviderAclPrincipal,
+    ProviderAclSnapshotIntegrityError,
+)
 from cortex.permissions.scopes import (
     SqlAlchemyPermissionScopeRepository,
     SqlAlchemyPermissionScopeService,
@@ -138,6 +142,7 @@ async def test_sql_snapshot_fails_closed_after_scope_removal() -> None:
     assert removed is not None
     assert removed.removed_at is not None
     assert removed.removed_at <= datetime.now(UTC)
+    assert removed.removed_by_actor_id == "user_2"
 
     after_removal = await load_permission_service_snapshot(session, "ws_1")  # type: ignore[arg-type]
     assert after_removal.scopes.list_active("ws_1") == []
@@ -264,9 +269,57 @@ async def test_sql_permission_snapshot_enforces_materialized_provider_acl() -> N
     assert allowed.decision == "allowed"
     assert allowed.reason == "provider_acl"
 
-    session.acl_snapshots.clear()
-    missing = await load_permission_service_snapshot(session, "ws_1")  # type: ignore[arg-type]
-    denied = missing.check_chunk(
+
+async def test_sql_permission_snapshot_preserves_scope_without_acl_policy() -> None:
+    session = _ScopeSession()
+    repository = SqlAlchemyPermissionScopeRepository(session)  # type: ignore[arg-type]
+    await repository.upsert_active(
+        workspace_id="ws_1",
+        provider="slack",
+        scope_type="slack_channel",
+        external_id="C123",
+    )
+
+    service = await load_permission_service_snapshot(session, "ws_1")  # type: ignore[arg-type]
+    allowed = service.check_chunk(
+        workspace_id="ws_1",
+        chunk=_slack_chunk(),
+    )
+    assert allowed.decision == "allowed"
+    assert allowed.reason == "permission_scope"
+
+
+async def test_sql_permission_snapshot_denies_missing_resource_after_acl_policy() -> (
+    None
+):
+    session = _ScopeSession()
+    repository = SqlAlchemyPermissionScopeRepository(session)  # type: ignore[arg-type]
+    await repository.upsert_active(
+        workspace_id="ws_1",
+        provider="slack",
+        scope_type="slack_channel",
+        external_id="C123",
+    )
+    now = datetime.now(UTC)
+    session.acl_snapshots["acl_other"] = ProviderAclSnapshotRecord(
+        id="acl_other",
+        workspace_id="ws_1",
+        provider="slack",
+        resource_type="slack_channel",
+        resource_id_hash=sha256_digest(b"C999"),
+        snapshot_hash="sha256:other",
+        is_current=True,
+        captured_at=now,
+        expires_at=now.replace(year=now.year + 1),
+        metadata_json={},
+        created_at=now,
+    )
+
+    service = await load_permission_service_snapshot(session, "ws_1")  # type: ignore[arg-type]
+    principal = ProviderAclPrincipal.from_external_id(
+        provider="slack", principal_type="user", external_id="U123"
+    )
+    denied = service.check_chunk(
         workspace_id="ws_1",
         chunk=_slack_chunk(),
         caller_principals=[principal],
@@ -310,3 +363,31 @@ async def test_sql_permission_snapshot_denies_stale_provider_acl() -> None:
     )
     assert denied.decision == "denied"
     assert denied.reason == "provider_acl_stale"
+
+
+async def test_sql_permission_snapshot_rejects_duplicate_current_acl_resources() -> (
+    None
+):
+    session = _ScopeSession()
+    now = datetime.now(UTC)
+    resource_hash = sha256_digest(b"C123")
+    for record_id in ("acl_a", "acl_b"):
+        session.acl_snapshots[record_id] = ProviderAclSnapshotRecord(
+            id=record_id,
+            workspace_id="ws_1",
+            provider="slack",
+            resource_type="slack_channel",
+            resource_id_hash=resource_hash,
+            snapshot_hash=f"sha256:{record_id}",
+            is_current=True,
+            captured_at=now,
+            expires_at=now.replace(year=now.year + 1),
+            metadata_json={},
+            created_at=now,
+        )
+
+    with pytest.raises(
+        ProviderAclSnapshotIntegrityError,
+        match="duplicate_current_provider_acl_snapshot",
+    ):
+        await load_permission_service_snapshot(session, "ws_1")  # type: ignore[arg-type]
