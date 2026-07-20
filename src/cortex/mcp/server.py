@@ -9,7 +9,7 @@ from cortex.canonical_memory.repositories import (
     InMemoryApprovalRecordRepository,
     InMemoryCanonicalDecisionRepository,
 )
-from cortex.canonical_memory.service import CanonicalDecisionService
+from cortex.canonical_memory.service import APPROVAL_ACTIONS, CanonicalDecisionService
 from cortex.context_gate.publishers import ContextGatePublisher
 from cortex.context_gate.repositories import InMemoryContextGateResultRepository
 from cortex.context_gate.service import ContextGateService
@@ -55,16 +55,68 @@ _local_runtime = CortexRuntime(
 class McpServer:
     """MCP adapter with a host-resolved authority and an injected runtime."""
 
-    def __init__(self, *, runtime: CortexRuntime, authority: CortexAuthority) -> None:
+    def __init__(
+        self,
+        *,
+        runtime: CortexRuntime,
+        authority: CortexAuthority,
+        canonical_service: CanonicalDecisionService | None = None,
+    ) -> None:
         self.runtime = runtime
         self.authority = authority
+        self.canonical_service = canonical_service or _canonical_service_for_runtime(
+            runtime
+        )
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         return await call_tool(
-            name, arguments, runtime=self.runtime, authority=self.authority
+            name,
+            arguments,
+            runtime=self.runtime,
+            authority=self.authority,
+            canonical_service=self.canonical_service,
         )
+
+
+def create_fixture_server(*, workspace_id: str = "ws_1") -> McpServer:
+    """Build the fixed-scope local fixture used only by tests and development.
+
+    This is intentionally an opt-in factory: the stdio transport never derives
+    a workspace from a client tool argument.
+    """
+    return McpServer(
+        runtime=_local_runtime,
+        authority=CortexAuthority(
+            workspace_id=workspace_id,
+            actor_id=None,
+            trace_id="mcp-local-fixture",
+        ),
+        canonical_service=_canonical_service,
+    )
+
+
+def _canonical_service_for_runtime(runtime: CortexRuntime) -> CanonicalDecisionService:
+    """Bind canonical decisions to evidence created by the injected runtime."""
+    evidence = getattr(runtime.retrieval, "evidence", None)
+    gates = getattr(runtime.context_gate, "repository", None)
+    if evidence is None:
+        return _canonical_service
+    decisions = InMemoryCanonicalDecisionRepository()
+    # The local retrieval implementation consumes this repository to elevate
+    # approved canonical decisions. Production composition roots may instead
+    # provide their own canonical service explicitly.
+    if hasattr(runtime.retrieval, "canonical_decisions"):
+        retrieval = runtime.retrieval
+        retrieval.canonical_decisions = decisions
+    return CanonicalDecisionService(
+        decisions=decisions,
+        approvals=InMemoryApprovalRecordRepository(),
+        evidence=evidence,
+        gates=gates or InMemoryContextGateResultRepository(),
+        publisher=CanonicalDecisionPublisher(InMemoryEventBus()),
+    )
 
 
 def list_tools() -> tuple[str, ...]:
@@ -77,33 +129,37 @@ async def call_tool(
     *,
     runtime: CortexRuntime | None = None,
     authority: CortexAuthority | None = None,
+    canonical_service: CanonicalDecisionService | None = None,
 ) -> dict[str, Any]:
     """Call one tool.
 
     Production callers must construct :class:`McpServer` with host-derived
-    authority.  This compatibility function keeps the deterministic local CLI
-    fixture, whose scope is fixed to the requested test workspace only.
+    authority. This compatibility function retains a deterministic, fixed-scope
+    ``ws_1`` fixture for legacy local tests; it never trusts a client workspace
+    claim to establish authority.
     """
     args = arguments or {}
     local_compatibility = runtime is None
     if runtime is None:
         runtime = _local_runtime
-        workspace_hint = args.get("workspace_id")
-        if not isinstance(workspace_hint, str) or not workspace_hint:
-            workspace_hint = "ws_1"
         authority = CortexAuthority(
-            workspace_id=workspace_hint,
+            workspace_id="ws_1",
             actor_id=None,
             trace_id="mcp-local",
         )
+        canonical_service = _canonical_service
     if authority is None:
         return {"ok": False, "error": "authority_unavailable"}
+    if canonical_service is None:
+        canonical_service = _canonical_service_for_runtime(runtime)
     if name not in TOOL_NAMES:
         return {"ok": False, "error": "unknown_tool", "tool": name}
     if name == "create_handoff_bundle":
         return create_handoff_bundle(arguments or {})
     if name in {"retrieve_context", "get_related_work"}:
-        allowed = {"workspace_id", "query", "source_allowlist", "provider_filters"}
+        allowed = {"query", "source_allowlist", "provider_filters"}
+        if local_compatibility:
+            allowed.add("workspace_id")
         unknown = sorted(set(args) - allowed)
         if unknown:
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
@@ -133,13 +189,14 @@ async def call_tool(
         }
     if name == "check_context_gate":
         allowed = {
-            "workspace_id",
             "query",
             "evidence_pack_id",
             "task_hints",
             "source_allowlist",
             "provider_filters",
         }
+        if local_compatibility:
+            allowed.add("workspace_id")
         unknown = sorted(set(args) - allowed)
         if unknown:
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
@@ -172,26 +229,29 @@ async def call_tool(
             **({"error": gate_response.error} if gate_response.error else {}),
         }
     if name == "propose_canonical_decision":
-        args = arguments or {}
         allowed = {
-            "workspace_id",
             "evidence_pack_id",
             "context_gate_result_id",
             "scope_type",
             "scope_ref",
             "title",
             "decision_text",
-            "actor_id",
         }
+        if local_compatibility:
+            allowed.add("workspace_id")
         unknown = sorted(set(args) - allowed)
         if unknown:
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
-        if "workspace_id" not in args:
-            return {"ok": False, "error": "missing_required_arguments"}
         if "evidence_pack_id" not in args and "context_gate_result_id" not in args:
             return {"ok": False, "error": "missing_required_arguments"}
-        canonical_response = _canonical_service.propose_canonical_decision(
-            workspace_id=str(args["workspace_id"]),
+        if (
+            local_compatibility
+            and "workspace_id" in args
+            and str(args["workspace_id"]) != authority.workspace_id
+        ):
+            return {"ok": False, "error": "workspace_scope_mismatch"}
+        canonical_response = canonical_service.propose_canonical_decision(
+            workspace_id=authority.workspace_id,
             evidence_pack_id=(
                 str(args["evidence_pack_id"]) if "evidence_pack_id" in args else None
             ),
@@ -206,7 +266,7 @@ async def call_tool(
             decision_text=(
                 str(args["decision_text"]) if "decision_text" in args else None
             ),
-            actor_id=str(args["actor_id"]) if "actor_id" in args else None,
+            actor_id=authority.actor_id,
         )
         return {
             "ok": canonical_response.ok,
@@ -220,7 +280,6 @@ async def call_tool(
         allowed = {
             "decision_id",
             "action",
-            "actor_id",
             "final_text",
             "rationale",
             "supersedes_decision_id",
@@ -230,10 +289,18 @@ async def call_tool(
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
         if "decision_id" not in args or "action" not in args:
             return {"ok": False, "error": "missing_required_arguments"}
-        canonical_response = await _canonical_service.approve_canonical_decision(
+        if authority.actor_id is None:
+            return {"ok": False, "error": "human_actor_required"}
+        try:
+            decision = canonical_service.decisions.get_by_id(str(args["decision_id"]))
+        except KeyError:
+            return {"ok": False, "error": "unknown_decision_id"}
+        if decision.workspace_id != authority.workspace_id:
+            return {"ok": False, "error": "workspace_scope_mismatch"}
+        canonical_response = await canonical_service.approve_canonical_decision(
             decision_id=str(args["decision_id"]),
             action=str(args["action"]),
-            actor_id=str(args["actor_id"]) if "actor_id" in args else None,
+            actor_id=authority.actor_id,
             final_text=str(args["final_text"]) if "final_text" in args else None,
             rationale=str(args["rationale"]) if "rationale" in args else None,
             supersedes_decision_id=(
@@ -320,6 +387,44 @@ def list_tool_definitions() -> list[dict[str, object]]:
         },
         "anyOf": [{"required": ["query"]}, {"required": ["evidence_pack_id"]}],
     }
+    proposal = next(
+        item
+        for item in definitions
+        if item["name"] == "propose_canonical_decision"
+    )
+    proposal["inputSchema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "evidence_pack_id": {"type": "string", "minLength": 1},
+            "context_gate_result_id": {"type": "string", "minLength": 1},
+            "scope_type": {"type": "string", "minLength": 1},
+            "scope_ref": {"type": "string", "minLength": 1},
+            "title": {"type": "string", "minLength": 1},
+            "decision_text": {"type": "string", "minLength": 1},
+        },
+        "anyOf": [
+            {"required": ["evidence_pack_id"]},
+            {"required": ["context_gate_result_id"]},
+        ],
+    }
+    approval = next(
+        item
+        for item in definitions
+        if item["name"] == "approve_canonical_decision"
+    )
+    approval["inputSchema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["decision_id", "action"],
+        "properties": {
+            "decision_id": {"type": "string", "minLength": 1},
+            "action": {"type": "string", "enum": sorted(APPROVAL_ACTIONS)},
+            "final_text": {"type": "string", "minLength": 1},
+            "rationale": {"type": "string", "minLength": 1},
+            "supersedes_decision_id": {"type": "string", "minLength": 1},
+        },
+    }
     return definitions
 
 
@@ -342,7 +447,9 @@ def _is_valid_method(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
+async def handle_json_rpc_message(
+    message: object, *, server: McpServer | None = None, fixture_mode: bool = False
+) -> dict[str, object] | None:
     """Handle one JSON-RPC 2.0 request for the newline-delimited stdio server."""
     if not isinstance(message, Mapping) or message.get("jsonrpc") != "2.0":
         return _json_rpc_error(None, -32600, "Invalid Request")
@@ -381,7 +488,15 @@ async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
             if is_notification:
                 return None
             return _json_rpc_error(request_id, -32602, "Invalid params")
-        response = await call_tool(name, dict(arguments))
+        # A transport host must resolve authority before dispatch.  The only
+        # fallback is an explicit fixed-scope fixture for local tests.
+        active_server = server or (create_fixture_server() if fixture_mode else None)
+        if active_server is None and name != "create_handoff_bundle":
+            response = {"ok": False, "error": "authority_unavailable"}
+        elif active_server is None:
+            response = create_handoff_bundle(dict(arguments))
+        else:
+            response = await active_server.call_tool(name, dict(arguments))
         result = {
             "content": [{"type": "text", "text": json.dumps(response, sort_keys=True)}],
             "structuredContent": response,
@@ -397,8 +512,13 @@ async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
-async def serve_stdio() -> None:
-    """Serve newline-delimited JSON-RPC over stdin/stdout without session access."""
+async def serve_stdio(
+    *, server: McpServer | None = None, fixture_mode: bool = False
+) -> None:
+    """Serve JSON-RPC using authority injected by the embedding host.
+
+    ``fixture_mode`` is deliberately opt-in and has a fixed ``ws_1`` scope.
+    """
     for line in sys.stdin:
         try:
             message = json.loads(line)
@@ -407,7 +527,9 @@ async def serve_stdio() -> None:
                 None, -32700, "Parse error"
             )
         else:
-            response = await handle_json_rpc_message(message)
+            response = await handle_json_rpc_message(
+                message, server=server, fixture_mode=fixture_mode
+            )
         if response is not None:
             sys.stdout.write(json.dumps(response, sort_keys=True) + "\n")
             sys.stdout.flush()

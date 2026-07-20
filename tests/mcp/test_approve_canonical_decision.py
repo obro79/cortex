@@ -1,25 +1,34 @@
-from cortex.mcp.server import call_tool
+from cortex.mcp.server import McpServer
+from cortex.runtime import CortexAuthority, create_local_runtime
+
+
+def _server(*, actor_id: str | None) -> McpServer:
+    return McpServer(
+        runtime=create_local_runtime(),
+        authority=CortexAuthority(
+            workspace_id="ws_1", actor_id=actor_id, trace_id="test-trace"
+        ),
+    )
 
 
 async def test_approve_canonical_decision_tool_requires_human_actor() -> None:
-    retrieval = await call_tool(
-        "retrieve_context", {"workspace_id": "ws_1", "query": "session migration"}
+    server = _server(actor_id=None)
+    retrieval = await server.call_tool(
+        "retrieve_context", {"query": "session migration"}
     )
-    proposal = await call_tool(
+    proposal = await server.call_tool(
         "propose_canonical_decision",
         {
-            "workspace_id": "ws_1",
             "evidence_pack_id": retrieval["evidence_pack_id"],
             "decision_text": "Postgres is canonical for session storage.",
         },
     )
 
-    response = await call_tool(
+    response = await server.call_tool(
         "approve_canonical_decision",
         {
             "decision_id": proposal["result"]["id"],
             "action": "approve",
-            "actor_id": "agent_1",
         },
     )
 
@@ -28,28 +37,27 @@ async def test_approve_canonical_decision_tool_requires_human_actor() -> None:
 
 
 async def test_approve_canonical_decision_tool_success_and_retrieval_priority() -> None:
-    retrieval = await call_tool(
-        "retrieve_context", {"workspace_id": "ws_1", "query": "session migration"}
+    server = _server(actor_id="human_1")
+    retrieval = await server.call_tool(
+        "retrieve_context", {"query": "session migration"}
     )
-    proposal = await call_tool(
+    proposal = await server.call_tool(
         "propose_canonical_decision",
         {
-            "workspace_id": "ws_1",
             "evidence_pack_id": retrieval["evidence_pack_id"],
             "decision_text": "Postgres is canonical for session storage.",
         },
     )
 
-    approval = await call_tool(
+    approval = await server.call_tool(
         "approve_canonical_decision",
         {
             "decision_id": proposal["result"]["id"],
             "action": "approve",
-            "actor_id": "human_1",
         },
     )
-    future = await call_tool(
-        "retrieve_context", {"workspace_id": "ws_1", "query": "session storage"}
+    future = await server.call_tool(
+        "retrieve_context", {"query": "session storage"}
     )
 
     assert approval["ok"] is True
