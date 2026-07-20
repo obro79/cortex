@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import SourceChunk
@@ -93,6 +93,36 @@ class InMemorySourceChunkRepository:
             and (chunking_version is None or chunk.chunking_version == chunking_version)
             and all(term in chunk.text.lower() for term in terms)
         ]
+
+    def search_fts_ranked(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
+        chunking_version: str | None = None,
+        limit: int | None = None,
+    ) -> list[tuple[SourceChunk, float]]:
+        """Deterministic fixture stand-in for the production FTS contract.
+
+        PostgreSQL ranking is implemented by ``SqlAlchemySourceChunkRepository``.
+        This intentionally only provides a stable, token-based score for unit tests.
+        """
+        terms = [term for term in query.lower().split() if term]
+        if not terms:
+            return []
+        matches = self.search_fts(
+            workspace_id=workspace_id,
+            query=query,
+            status=status,
+            chunking_version=chunking_version,
+        )
+        ranked = [
+            (chunk, sum(chunk.text.lower().count(term) for term in terms) / len(terms))
+            for chunk in matches
+        ]
+        ranked.sort(key=lambda item: (-item[1], item[0].id))
+        return ranked[:limit] if limit is not None else ranked
 
     def mark_stale_replaced_by(
         self,
@@ -264,20 +294,48 @@ class SqlAlchemySourceChunkRepository:
         status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
         chunking_version: str | None = None,
     ) -> list[SourceChunk]:
-        statement = select(SourceChunkRecord).where(
-            SourceChunkRecord.workspace_id == workspace_id,
-            SourceChunkRecord.status == SourceChunkStatus(status).value,
+        ranked = await self.search_fts_ranked(
+            workspace_id=workspace_id,
+            query=query,
+            status=status,
+            chunking_version=chunking_version,
+        )
+        return [chunk for chunk, _score in ranked]
+
+    async def search_fts_ranked(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
+        chunking_version: str | None = None,
+        limit: int | None = None,
+    ) -> list[tuple[SourceChunk, float]]:
+        """Run ranked PostgreSQL full-text search without interpolating user input."""
+        if not query.strip():
+            return []
+        vector = func.to_tsvector("english", SourceChunkRecord.text)
+        tsquery = func.websearch_to_tsquery("english", query)
+        rank = func.ts_rank_cd(vector, tsquery).label("lexical_score")
+        statement = (
+            select(SourceChunkRecord, rank)
+            .where(
+                SourceChunkRecord.workspace_id == workspace_id,
+                SourceChunkRecord.status == SourceChunkStatus(status).value,
+                vector.op("@@")(tsquery),
+            )
+            .order_by(rank.desc(), SourceChunkRecord.id)
         )
         if chunking_version is not None:
             statement = statement.where(
                 SourceChunkRecord.chunking_version == chunking_version
             )
+        if limit is not None:
+            statement = statement.limit(limit)
         result = await self.session.execute(statement)
-        terms = query.lower().split()
         return [
-            source_chunk_from_record(record)
-            for record in result.scalars()
-            if all(term in record.text.lower() for term in terms)
+            (source_chunk_from_record(record), float(score))
+            for record, score in result.tuples()
         ]
 
     async def mark_stale_replaced_by(

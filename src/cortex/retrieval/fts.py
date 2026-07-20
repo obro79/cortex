@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.contracts.enums import SourceChunkStatus
+from cortex.utils.asyncio import maybe_await
 
 from .candidates import Candidate
 from .query import QueryPlan
 
 
 class FtsRetriever:
-    def __init__(self, source_chunks: InMemorySourceChunkRepository) -> None:
+    def __init__(self, source_chunks: object) -> None:
         self.source_chunks = source_chunks
 
-    def retrieve(
+    async def retrieve(
         self,
         *,
         workspace_id: str,
@@ -19,13 +19,24 @@ class FtsRetriever:
         chunking_version: str,
         limit: int,
     ) -> list[Candidate]:
-        chunks = self.source_chunks.search_fts(
-            workspace_id=workspace_id,
-            query=plan.normalized_query,
-            status=SourceChunkStatus.ACTIVE,
-            chunking_version=chunking_version,
+        search = getattr(self.source_chunks, "search_fts_ranked", None)
+        if search is None:
+            raise TypeError("source chunk repository does not support ranked FTS")
+        matches = await maybe_await(
+            search(
+                workspace_id=workspace_id,
+                query=plan.normalized_query,
+                status=SourceChunkStatus.ACTIVE,
+                chunking_version=chunking_version,
+                limit=limit,
+            )
         )
         return [
-            Candidate(source_chunk=chunk, lexical_score=1.0, paths={"fts"})
-            for chunk in chunks[:limit]
+            Candidate(
+                source_chunk=chunk,
+                lexical_score=score,
+                paths={"fts"},
+                score_provenance={"lexical": score},
+            )
+            for chunk, score in matches
         ]

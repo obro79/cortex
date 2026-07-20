@@ -23,11 +23,12 @@ class HybridCandidateFuser:
         vector_candidates: Iterable[Candidate],
         provider_filters: Iterable[str] = (),
         additional_candidates: Iterable[Candidate] = (),
+        limit: int | None = None,
     ) -> list[Candidate]:
         allowed_providers = {
             provider.strip().lower()
             for provider in provider_filters
-            if provider.strip()
+            if isinstance(provider, str) and provider.strip()
         }
         merged: dict[str, Candidate] = {}
         candidate_sets = (
@@ -44,7 +45,19 @@ class HybridCandidateFuser:
                 merged[annotated.id] = (
                     annotated if existing is None else self._merge(existing, annotated)
                 )
-        return [merged[candidate_id] for candidate_id in sorted(merged)]
+        fused = list(merged.values())
+        fused.sort(
+            key=lambda candidate: (
+                -max(
+                    candidate.lexical_score,
+                    candidate.vector_score,
+                    candidate.relationship_score,
+                    candidate.source_authority_score,
+                ),
+                candidate.id,
+            )
+        )
+        return fused[:limit] if limit is not None else fused
 
     def _is_eligible(
         self,
@@ -111,6 +124,8 @@ class HybridCandidateFuser:
     @staticmethod
     def provider(candidate: Candidate) -> str | None:
         metadata = candidate.source_chunk.metadata_json
+        if not isinstance(metadata, dict):
+            return None
         provider = metadata.get("provider")
         if isinstance(provider, str):
             return provider.lower()

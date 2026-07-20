@@ -104,7 +104,7 @@ class RetrievalService:
         errors: dict[str, str] = {}
         try:
             lexical_candidates.extend(
-                self.fts.retrieve(
+                await self.fts.retrieve(
                     workspace_id=workspace_id,
                     plan=plan,
                     chunking_version=self.config.chunking.version,
@@ -139,6 +139,7 @@ class RetrievalService:
             vector_candidates=vector_candidates,
             provider_filters=plan.provider_filters,
             additional_candidates=additional_candidates,
+            limit=int(self.config.candidate_retrieval["merged_candidate_limit"]),
         )
 
         permission_filter = PermissionFilter(
