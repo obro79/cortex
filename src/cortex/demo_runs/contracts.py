@@ -8,9 +8,10 @@ separate source-health DTO is likewise content-free.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SourceMode = Literal["live", "imported_snapshot", "fixture"]
 Readiness = Literal["ready", "partial", "not_ready", "unavailable"]
@@ -20,11 +21,16 @@ IssueSeverity = Literal["warning", "error"]
 type OpaqueHash = Annotated[
     str,
     Field(
-        min_length=8,
-        max_length=160,
-        pattern=r"^sha256:[A-Fa-f0-9]+$",
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[A-Fa-f0-9]{64}$",
     ),
 ]
+type StageCode = Annotated[
+    str,
+    Field(min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_:-]*$"),
+]
+_URL_LIKE = re.compile(r"(?:[a-z][a-z0-9+.-]*://|www\.)", re.IGNORECASE)
 
 
 class _ContractModel(BaseModel):
@@ -79,9 +85,18 @@ class DemoRunReport(_ContractModel):
     collection: str = Field(min_length=1, max_length=160, pattern=r"^[A-Za-z0-9_.-]+$")
     counts: LiveRunCounts
     freshness_seconds: int | None = Field(default=None, ge=0)
-    stages: dict[str, str] = Field(min_length=1)
+    stages: dict[StageCode, StageCode] = Field(min_length=1, max_length=40)
     disclosure: str = Field(min_length=1, max_length=400)
     next_action: str | None = Field(default=None, max_length=400)
+
+    @field_validator("disclosure", "next_action")
+    @classmethod
+    def _safe_display_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if "\n" in value or "\r" in value or _URL_LIKE.search(value):
+            raise ValueError("must not contain a newline or URL-like value")
+        return value
 
 
 class DemoRunReportStatus(_ContractModel):

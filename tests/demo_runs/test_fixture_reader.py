@@ -2,8 +2,39 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from cortex.demo_runs import FixtureDemoRunReportReader, LiveRunCounts
 from cortex.demo_runs.contracts import DemoRunReport
+
+_HASH_A = "sha256:" + "a" * 64
+_HASH_B = "sha256:" + "b" * 64
+
+
+def _report_payload() -> dict[str, object]:
+    return {
+        "mode": "controlled_live_run",
+        "outcome": "passed",
+        "live_data": True,
+        "run_id_hash": _HASH_A,
+        "environment": "local",
+        "provider": "slack",
+        "source_ref_hash": _HASH_B,
+        "collection": "cortex-local-embedding",
+        "counts": LiveRunCounts(
+            raw_events=1,
+            source_objects=1,
+            source_chunks=1,
+            embeddings_completed=1,
+            vector_points_verified=1,
+            query_requests=1,
+            evidence_packs=1,
+            failures=0,
+        ),
+        "stages": {"slack_backfill": "completed"},
+        "disclosure": "Counts and opaque hashes only.",
+    }
 
 
 async def test_fixture_reader_refuses_to_fabricate_a_live_run_report() -> None:
@@ -32,28 +63,7 @@ async def test_fixture_reader_returns_redacted_source_health() -> None:
 
 
 def test_live_report_serialization_has_exact_persisted_schema() -> None:
-    report = DemoRunReport(
-        mode="controlled_live_run",
-        outcome="passed",
-        live_data=True,
-        run_id_hash="sha256:deadbeef",
-        environment="local",
-        provider="slack",
-        source_ref_hash="sha256:cafebabe",
-        collection="cortex-local-embedding",
-        counts=LiveRunCounts(
-            raw_events=1,
-            source_objects=1,
-            source_chunks=1,
-            embeddings_completed=1,
-            vector_points_verified=1,
-            query_requests=1,
-            evidence_packs=1,
-            failures=0,
-        ),
-        stages={"slack_backfill": "completed"},
-        disclosure="Counts and opaque hashes only.",
-    )
+    report = DemoRunReport(**_report_payload())
 
     assert set(report.model_dump()) == {
         "schema_version",
@@ -71,3 +81,52 @@ def test_live_report_serialization_has_exact_persisted_schema() -> None:
         "disclosure",
         "next_action",
     }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("run_id_hash", "sha256:deadbeef"),
+        ("source_ref_hash", "sha256:" + "not-hex" * 10),
+    ],
+)
+def test_live_report_rejects_non_sha256_hashes(field: str, value: str) -> None:
+    payload = _report_payload()
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        DemoRunReport(**payload)
+
+
+@pytest.mark.parametrize(
+    "stages",
+    [
+        {"SlackBackfill": "completed"},
+        {"slack_backfill": "COMPLETED"},
+        {"slack_backfill": "completed\nleaked"},
+    ],
+)
+def test_live_report_rejects_unsafe_stage_codes(stages: dict[str, str]) -> None:
+    payload = _report_payload()
+    payload["stages"] = stages
+
+    with pytest.raises(ValidationError):
+        DemoRunReport(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("disclosure", "Read https://example.test for details"),
+        ("disclosure", "line one\nline two"),
+        ("next_action", "Visit www.example.test"),
+    ],
+)
+def test_live_report_rejects_url_like_or_multiline_display_text(
+    field: str, value: str
+) -> None:
+    payload = _report_payload()
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        DemoRunReport(**payload)
