@@ -21,6 +21,7 @@ from cortex.contracts.enums import (
     SourceChunkStatus,
     SourceObjectStatus,
 )
+from cortex.indexing.qdrant import qdrant_point_id
 from cortex.ingestion.payloads import PayloadStore
 from cortex.lifecycle.models import LifecycleExportResult
 from cortex.utils.asyncio import maybe_await
@@ -206,7 +207,7 @@ class QdrantLifecycleDeleter:
         ) as client:
             response = await client.post(
                 f"/collections/{collection}/points/delete",
-                json={"points": [point_id]},
+                json={"points": [qdrant_point_id(collection, point_id)]},
             )
         return 200 <= response.status_code < 300
 
