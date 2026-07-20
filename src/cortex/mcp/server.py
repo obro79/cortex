@@ -16,9 +16,15 @@ from cortex.context_gate.service import ContextGateService
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.handoff import create_handoff_bundle
 from cortex.retrieval.defaults import create_empty_retrieval_service
+from cortex.retrieval.task_context import (
+    TaskContextRequest,
+    invalid_arguments_response,
+    parse_task_context_request,
+)
 from cortex.runtime import CortexAuthority, CortexRuntime
 
 TOOL_NAMES = (
+    "get_task_context",
     "retrieve_context",
     "get_related_work",
     "check_context_gate",
@@ -157,6 +163,16 @@ async def call_tool(
         canonical_service = _canonical_service_for_runtime(runtime)
     if name not in TOOL_NAMES:
         return {"ok": False, "error": "unknown_tool", "tool": name}
+    if name == "get_task_context":
+        try:
+            request = parse_task_context_request(args)
+        except Exception:
+            return invalid_arguments_response(
+                trace_id=authority.trace_id, live_data=runtime.live_data
+            ).model_dump(mode="json", exclude_none=True)
+        return (
+            await runtime.get_task_context(authority=authority, request=request)
+        ).model_dump(mode="json", exclude_none=True)
     if name == "create_handoff_bundle":
         return create_handoff_bundle(arguments or {})
     if name in {"retrieve_context", "get_related_work"}:
@@ -377,6 +393,18 @@ def list_tool_definitions() -> list[dict[str, object]]:
                 "provider_filters": {"type": "array", "items": {"type": "string"}},
             },
         }
+    task_context = next(
+        item for item in definitions if item["name"] == "get_task_context"
+    )
+    task_context.update(
+        {
+            "description": (
+                "Return bounded, permission-filtered, cited company evidence for "
+                "a task. Cortex does not generate an answer or recommendation."
+            ),
+            "inputSchema": TaskContextRequest.model_json_schema(),
+        }
+    )
     gate = next(item for item in definitions if item["name"] == "check_context_gate")
     gate["inputSchema"] = {
         "type": "object",

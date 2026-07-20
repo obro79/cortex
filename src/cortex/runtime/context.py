@@ -10,6 +10,11 @@ from cortex.contracts.entities import EvidencePack, RetrievalRequest
 from cortex.permissions import ProviderAclPrincipal
 from cortex.retrieval.defaults import create_empty_retrieval_service
 from cortex.retrieval.service import RetrievalService, RetrievalServiceResponse
+from cortex.retrieval.task_context import (
+    TaskContextRequest,
+    TaskContextResponse,
+    TaskContextService,
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,52 @@ class CortexRuntime:
             source_allowlist=source_allowlist,
             provider_filters=provider_filters,
             caller_principals=list(authority.caller_principals),
+        )
+
+    async def get_task_context(
+        self,
+        *,
+        authority: CortexAuthority,
+        request: TaskContextRequest,
+    ) -> TaskContextResponse:
+        """Resolve only host authority and project retrieval into MCP v1 DTO."""
+        if not authority.workspace_id.strip():
+            return TaskContextResponse.error_response(
+                trace_id=authority.trace_id,
+                live_data=self.live_data,
+                code="WORKSPACE_UNAVAILABLE",
+                message="Task context is unavailable.",
+            )
+        try:
+            response = await self.retrieve(
+                authority=authority,
+                query=request.task.objective,
+                source_allowlist=request.filters.source_ids,
+                provider_filters=request.filters.providers,
+            )
+        except RuntimeError:
+            return TaskContextResponse.error_response(
+                trace_id=authority.trace_id,
+                live_data=self.live_data,
+                code="CONTEXT_RUNTIME_UNAVAILABLE",
+                message="Task context is temporarily unavailable.",
+                retryable=True,
+                retry_after_seconds=10,
+            )
+        except Exception:
+            return TaskContextResponse.error_response(
+                trace_id=authority.trace_id,
+                live_data=self.live_data,
+                code="RETRIEVAL_UNAVAILABLE",
+                message="Task context is temporarily unavailable.",
+                retryable=True,
+                retry_after_seconds=10,
+            )
+        return TaskContextService().project(
+            request=request,
+            response=response,
+            trace_id=authority.trace_id,
+            live_data=self.live_data,
         )
 
     async def check_gate(
