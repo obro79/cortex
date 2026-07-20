@@ -5,6 +5,8 @@ from collections.abc import Callable
 from cortex.contracts.entities import RawEvent
 from cortex.normalization.normalizers.fixtures import normalize_fixture_payload
 from cortex.normalization.normalizers.github import normalize_github_payload
+from cortex.normalization.normalizers.google_drive import normalize_google_drive_payload
+from cortex.normalization.normalizers.jira import normalize_jira_payload
 from cortex.normalization.normalizers.linear import normalize_linear_payload
 from cortex.normalization.normalizers.repo_docs import normalize_repo_doc_payload
 from cortex.normalization.normalizers.slack import normalize_slack_payload
@@ -25,6 +27,8 @@ class NormalizerRegistry:
             "linear": normalize_linear_payload,
             "github": normalize_github_payload,
             "repo_docs": normalize_repo_doc_payload,
+            "google_drive": normalize_google_drive_payload,
+            "jira": normalize_jira_payload,
         }
 
     def resolve(self, raw_event: RawEvent) -> Normalizer:

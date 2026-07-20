@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+MAX_CURSOR_LENGTH = 2048
+
 
 def _text(value: object) -> str | None:
-    if value is None:
+    if not isinstance(value, str):
         return None
-    rendered = str(value).strip()
+    rendered = value.strip()
     return rendered or None
 
 
@@ -22,9 +24,15 @@ class GoogleDriveSnapshotPageInput:
     page_size: int = 100
 
     def __post_init__(self) -> None:
-        if self.folder_id is not None and not self.folder_id.strip():
+        if self.folder_id is not None and (
+            not isinstance(self.folder_id, str) or not self.folder_id.strip()
+        ):
             raise ValueError("google drive folder_id must be non-empty when supplied")
-        if self.cursor is not None and not self.cursor.strip():
+        if self.cursor is not None and (
+            not isinstance(self.cursor, str)
+            or not self.cursor.strip()
+            or len(self.cursor) > MAX_CURSOR_LENGTH
+        ):
             raise ValueError("google drive cursor must be non-empty when supplied")
         if not 1 <= self.page_size <= 1000:
             raise ValueError("google drive page_size must be between 1 and 1000")
@@ -52,7 +60,7 @@ class GoogleDriveFileSnapshot:
             raise ValueError("google drive snapshot requires id, name, and mimeType")
         raw_parents = payload.get("parents")
         parent_ids = (
-            tuple(str(parent).strip() for parent in raw_parents if str(parent).strip())
+            tuple(parent.strip() for parent in raw_parents if _text(parent))
             if isinstance(raw_parents, list)
             else ()
         )
@@ -87,8 +95,18 @@ class GoogleDriveSnapshotPage:
     next_cursor: str | None = None
 
     def __post_init__(self) -> None:
-        if self.next_cursor is not None and not self.next_cursor.strip():
+        if len(self.files) > self.input.page_size:
+            raise ValueError("google drive snapshot page exceeds requested page_size")
+        if len({file.file_id for file in self.files}) != len(self.files):
+            raise ValueError("google drive snapshot page contains duplicate file ids")
+        if self.next_cursor is not None and (
+            not isinstance(self.next_cursor, str)
+            or not self.next_cursor.strip()
+            or len(self.next_cursor) > MAX_CURSOR_LENGTH
+        ):
             raise ValueError("google drive next_cursor must be non-empty when supplied")
+        if self.next_cursor is not None and self.next_cursor == self.input.cursor:
+            raise ValueError("google drive next_cursor must advance the cursor")
 
     @property
     def next_page_input(self) -> GoogleDriveSnapshotPageInput | None:
