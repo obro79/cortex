@@ -10,6 +10,14 @@ from .query import QueryPlan
 
 
 class VectorRetriever:
+    """Hydrate canonical chunks only after vector-result eligibility checks.
+
+    Vector adapters should implement ``search_filtered`` and enforce the supplied
+    workspace, active-status, embedding-version, provider, and source-object
+    constraints server-side. The payload checks below remain a fail-closed
+    defense for adapters that only implement the base ``VectorIndex`` protocol.
+    """
+
     def __init__(
         self,
         *,
@@ -32,12 +40,32 @@ class VectorRetriever:
     ) -> list[Candidate]:
         query_hash = sha256_digest(plan.normalized_query.encode())
         embedding = self.embedder.embed(query_hash)
-        results = await self.vector_index.search(
-            self.collection, embedding.vector, limit
-        )
-        candidates = []
         allowed_providers = {provider.lower() for provider in plan.provider_filters}
         allowed_sources = set(plan.source_allowlist)
+        filtered_search = getattr(self.vector_index, "search_filtered", None)
+        if callable(filtered_search):
+            filters: dict[str, object] = {
+                "workspace_id": workspace_id,
+                "status": "active",
+                "embedding_version": self.embedder.version,
+            }
+            if allowed_providers:
+                filters["provider"] = sorted(allowed_providers)
+            if allowed_sources:
+                filters["source_object_id"] = sorted(allowed_sources)
+            results = await maybe_await(
+                filtered_search(
+                    self.collection,
+                    embedding.vector,
+                    filters=filters,
+                    limit=limit,
+                )
+            )
+        else:
+            results = await self.vector_index.search(
+                self.collection, embedding.vector, limit
+            )
+        candidates = []
         for result in results:
             payload = result.get("payload", {})
             if (

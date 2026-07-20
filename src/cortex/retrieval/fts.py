@@ -28,6 +28,8 @@ class FtsRetriever:
                 query=plan.normalized_query,
                 status=SourceChunkStatus.ACTIVE,
                 chunking_version=chunking_version,
+                source_allowlist=plan.source_allowlist,
+                provider_filters=plan.provider_filters,
                 limit=limit,
             )
         )

@@ -5,6 +5,20 @@ from cortex.retrieval.vector import VectorRetriever
 
 
 class _VectorIndex:
+    def __init__(self) -> None:
+        self.filters: dict[str, object] | None = None
+
+    async def search_filtered(
+        self,
+        collection: str,
+        vector: list[float],
+        *,
+        filters: dict[str, object],
+        limit: int,
+    ) -> list[dict[str, object]]:
+        self.filters = filters
+        return await self.search(collection, vector, limit)
+
     async def search(
         self, collection: str, vector: list[float], limit: int
     ) -> list[dict[str, object]]:
@@ -29,8 +43,9 @@ class _NoHydrationRepository:
 
 async def test_vector_metadata_filters_run_before_canonical_chunk_hydration() -> None:
     config = load_retrieval_config()
+    index = _VectorIndex()
     retriever = VectorRetriever(
-        vector_index=_VectorIndex(),  # type: ignore[arg-type]
+        vector_index=index,  # type: ignore[arg-type]
         source_chunks=_NoHydrationRepository(),
         embedder=DeterministicEmbeddingProvider(
             dimensions=16, version=config.embeddings.version
@@ -48,3 +63,10 @@ async def test_vector_metadata_filters_run_before_canonical_chunk_hydration() ->
     )
 
     assert candidates == []
+    assert index.filters == {
+        "workspace_id": "ws_1",
+        "status": "active",
+        "embedding_version": config.embeddings.version,
+        "provider": ["github"],
+        "source_object_id": ["so_allowed"],
+    }

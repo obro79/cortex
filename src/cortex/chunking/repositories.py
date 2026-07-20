@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import SourceChunk
 from cortex.contracts.enums import SourceChunkStatus
-from cortex.db.models import SourceChunkRecord
+from cortex.db.models import SourceChunkRecord, SourceObjectRecord
 
 
 @dataclass(frozen=True)
@@ -83,14 +84,27 @@ class InMemorySourceChunkRepository:
         query: str,
         status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
         chunking_version: str | None = None,
+        source_allowlist: Iterable[str] = (),
+        provider_filters: Iterable[str] = (),
     ) -> list[SourceChunk]:
         terms = query.lower().split()
+        allowed_sources = {value for value in source_allowlist if value}
+        allowed_providers = {
+            value.lower() for value in provider_filters if value.strip()
+        }
         return [
             chunk
             for chunk in self._records.values()
             if chunk.workspace_id == workspace_id
             and chunk.status == status
             and (chunking_version is None or chunk.chunking_version == chunking_version)
+            and (
+                not allowed_sources or chunk.source_object_id in allowed_sources
+            )
+            and (
+                not allowed_providers
+                or _provider_from_metadata(chunk.metadata_json) in allowed_providers
+            )
             and all(term in chunk.text.lower() for term in terms)
         ]
 
@@ -101,6 +115,8 @@ class InMemorySourceChunkRepository:
         query: str,
         status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
         chunking_version: str | None = None,
+        source_allowlist: Iterable[str] = (),
+        provider_filters: Iterable[str] = (),
         limit: int | None = None,
     ) -> list[tuple[SourceChunk, float]]:
         """Deterministic fixture stand-in for the production FTS contract.
@@ -116,6 +132,8 @@ class InMemorySourceChunkRepository:
             query=query,
             status=status,
             chunking_version=chunking_version,
+            source_allowlist=source_allowlist,
+            provider_filters=provider_filters,
         )
         ranked = [
             (chunk, sum(chunk.text.lower().count(term) for term in terms) / len(terms))
@@ -293,12 +311,16 @@ class SqlAlchemySourceChunkRepository:
         query: str,
         status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
         chunking_version: str | None = None,
+        source_allowlist: Iterable[str] = (),
+        provider_filters: Iterable[str] = (),
     ) -> list[SourceChunk]:
         ranked = await self.search_fts_ranked(
             workspace_id=workspace_id,
             query=query,
             status=status,
             chunking_version=chunking_version,
+            source_allowlist=source_allowlist,
+            provider_filters=provider_filters,
         )
         return [chunk for chunk, _score in ranked]
 
@@ -309,6 +331,8 @@ class SqlAlchemySourceChunkRepository:
         query: str,
         status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
         chunking_version: str | None = None,
+        source_allowlist: Iterable[str] = (),
+        provider_filters: Iterable[str] = (),
         limit: int | None = None,
     ) -> list[tuple[SourceChunk, float]]:
         """Run ranked PostgreSQL full-text search without interpolating user input."""
@@ -317,6 +341,10 @@ class SqlAlchemySourceChunkRepository:
         vector = func.to_tsvector("english", SourceChunkRecord.text)
         tsquery = func.websearch_to_tsquery("english", query)
         rank = func.ts_rank_cd(vector, tsquery).label("lexical_score")
+        allowed_sources = {value for value in source_allowlist if value}
+        allowed_providers = {
+            value.lower() for value in provider_filters if value.strip()
+        }
         statement = (
             select(SourceChunkRecord, rank)
             .where(
@@ -330,6 +358,20 @@ class SqlAlchemySourceChunkRepository:
             statement = statement.where(
                 SourceChunkRecord.chunking_version == chunking_version
             )
+        if allowed_sources:
+            statement = statement.where(
+                SourceChunkRecord.source_object_id.in_(allowed_sources)
+            )
+        if allowed_providers:
+            statement = statement.join(
+                SourceObjectRecord,
+                and_(
+                    SourceObjectRecord.workspace_id == SourceChunkRecord.workspace_id,
+                    SourceObjectRecord.id == SourceChunkRecord.source_object_id,
+                ),
+            ).where(
+                func.lower(SourceObjectRecord.provider).in_(allowed_providers),
+            )
         if limit is not None:
             statement = statement.limit(limit)
         result = await self.session.execute(statement)
@@ -337,7 +379,6 @@ class SqlAlchemySourceChunkRepository:
             (source_chunk_from_record(record), float(score))
             for record, score in result.tuples()
         ]
-
     async def mark_stale_replaced_by(
         self,
         *,
@@ -468,3 +509,21 @@ class SqlAlchemySourceChunkRepository:
             created_at=chunk.created_at,
             updated_at=chunk.updated_at,
         )
+
+
+def _provider_from_metadata(metadata: dict[str, object]) -> str | None:
+    provider = metadata.get("provider")
+    if isinstance(provider, str):
+        return provider.lower()
+    object_type = metadata.get("object_type")
+    provider_by_object_type = {
+        "slack_thread": "slack",
+        "linear_issue": "linear",
+        "github_pull_request": "github",
+        "github_issue": "github",
+        "github_commit": "github",
+        "repo_doc": "repo_docs",
+    }
+    if not isinstance(object_type, str):
+        return None
+    return provider_by_object_type.get(object_type)
