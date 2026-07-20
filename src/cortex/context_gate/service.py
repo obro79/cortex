@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from inspect import isawaitable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from cortex.contracts.entities import EvidencePack, RetrievalRequest
 from cortex.permissions import ProviderAclPrincipal
@@ -205,7 +205,12 @@ class _RetrievalServiceEvidenceReader:
         self._retrieval_service = retrieval_service
 
     def read_evidence_pack(self, evidence_pack_id: str) -> EvidencePack:
-        return self._retrieval_service.evidence.get_by_id(evidence_pack_id)
+        return cast(
+            EvidencePack, self._retrieval_service.evidence.get_by_id(evidence_pack_id)
+        )
 
     def read_retrieval_request(self, retrieval_request_id: str) -> RetrievalRequest:
-        return self._retrieval_service.requests.get_by_id(retrieval_request_id)
+        return cast(
+            RetrievalRequest,
+            self._retrieval_service.requests.get_by_id(retrieval_request_id),
+        )
