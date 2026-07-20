@@ -42,6 +42,7 @@ _ALLOWED_PAYLOAD_KEYS = frozenset(
         "embedding_id",
         "embedding_model",
         "embedding_version",
+        "eligibility_revision",
         "index_version",
         "provider",
         "scope_revision",
@@ -137,6 +138,31 @@ class QdrantVectorIndex:
                 points=[qdrant_point_id(collection, point_id)]
             ),
             wait=True,
+        )
+
+    async def verify_point(
+        self,
+        collection: str,
+        point_id: str,
+        *,
+        expected_payload: Mapping[str, Any] | None,
+    ) -> bool:
+        """Observe a point after a write/delete before completing its job."""
+        validate_collection_name(collection)
+        validate_point_id(point_id)
+        records = await self._client.retrieve(
+            collection_name=collection,
+            ids=[qdrant_point_id(collection, point_id)],
+            with_payload=True,
+            with_vectors=False,
+        )
+        if expected_payload is None:
+            return not records
+        if len(records) != 1:
+            return False
+        payload = dict(records[0].payload or {})
+        return payload.pop(_INTERNAL_POINT_ID_KEY, None) == point_id and all(
+            payload.get(key) == value for key, value in expected_payload.items()
         )
 
     async def search(

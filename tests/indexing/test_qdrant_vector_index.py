@@ -50,6 +50,14 @@ class FakeQdrantClient:
             self.deleted_ids.append(str(point_id))
             self.points[kwargs["collection_name"]].pop(str(point_id), None)
 
+    async def retrieve(self, **kwargs: Any) -> list[Any]:
+        points = self.points[kwargs["collection_name"]]
+        return [
+            points[str(point_id)]
+            for point_id in kwargs["ids"]
+            if str(point_id) in points
+        ]
+
     async def query_points(self, **kwargs: Any) -> Any:
         self.search_calls.append(kwargs)
         points = [
@@ -113,6 +121,28 @@ async def test_qdrant_adapter_bootstraps_idempotently_and_uses_stable_point_ids(
     await index.delete("cortex-test-gemini-v1-2", "embedding_chunk_1_v1")
     assert client.deleted_ids == [str(first_qdrant_id)]
     assert await index.search("cortex-test-gemini-v1-2", [0.3, 0.4], 10) == []
+
+
+async def test_qdrant_adapter_verifies_observed_metadata_and_deletion() -> None:
+    client = FakeQdrantClient()
+    index = QdrantVectorIndex(client)
+    collection = "cortex-verification"
+    payload = {"workspace_id": "ws_1", "status": "active", "index_version": "v1"}
+    await index.ensure_collection(collection, 2)
+    await index.upsert(collection, "point_1", [0.1, 0.2], payload)
+
+    assert await index.verify_point(
+        collection, "point_1", expected_payload=payload
+    ) is True
+    assert await index.verify_point(
+        collection,
+        "point_1",
+        expected_payload={"workspace_id": "another-workspace"},
+    ) is False
+    await index.delete(collection, "point_1")
+    assert (
+        await index.verify_point(collection, "point_1", expected_payload=None)
+    ) is True
 
 
 async def test_qdrant_adapter_rejects_content_bearing_payloads_and_dimension_drift(

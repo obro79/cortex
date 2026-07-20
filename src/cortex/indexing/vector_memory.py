@@ -36,6 +36,20 @@ class InMemoryVectorIndex:
     async def delete(self, collection: str, point_id: str) -> None:
         self.points.get(collection, {}).pop(point_id, None)
 
+    async def verify_point(
+        self,
+        collection: str,
+        point_id: str,
+        *,
+        expected_payload: dict[str, Any] | None,
+    ) -> bool:
+        point = self.points.get(collection, {}).get(point_id)
+        if expected_payload is None:
+            return point is None
+        return point is not None and all(
+            point[1].get(key) == value for key, value in expected_payload.items()
+        )
+
     async def search(
         self, collection: str, vector: list[float], limit: int
     ) -> list[dict[str, Any]]:
