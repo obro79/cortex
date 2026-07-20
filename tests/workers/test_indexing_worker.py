@@ -24,7 +24,17 @@ async def test_index_worker_delivers_completed_embedding_idempotently(
         load_retrieval_config().chunking
     ).chunks_for_source_object(phase4_source_object)[0]
     chunk = chunk.model_copy(
-        update={"metadata_json": {**chunk.metadata_json, "provider": "linear"}}
+        update={
+            "metadata_json": {
+                **chunk.metadata_json,
+                "provider": "linear",
+                "source_allowlist_eligible": True,
+                "scope_revision": "scope-v2",
+                "acl_revision": "acl-v3",
+                "eligibility_revision": "eligibility-v4",
+                "source_scope": "scope:engineering",
+            }
+        }
     )
     chunks.upsert_many([chunk])
     event_bus = InMemoryEventBus()
@@ -74,9 +84,15 @@ async def test_index_worker_delivers_completed_embedding_idempotently(
         "embedding_id": embedding.id,
         "embedding_model": embedding.model,
         "embedding_version": embedding.embedding_version,
+        "index_version": index_jobs.get_by_id(indexed["index_job_id"]).index_version,
         "status": "active",
         "provider": "linear",
         "source_type": "linear_issue",
+        "source_allowlist_eligible": True,
+        "scope_revision": "scope-v2",
+        "acl_revision": "acl-v3",
+        "eligibility_revision": "eligibility-v4",
+        "source_scope": "scope:engineering",
     }
     assert [event.event_type for event in event_bus.list_events()] == [
         "embedding.requested",
@@ -208,3 +224,46 @@ async def test_index_worker_marks_invalid_job_terminal(
 
     assert result["status"] == "terminal"
     assert jobs.get_by_id(job.id).status == IndexJobStatus.FAILED_TERMINAL
+
+
+async def test_index_worker_never_completes_an_unverified_vector_delivery(
+    phase4_source_object: SourceObject,
+) -> None:
+    chunks = InMemorySourceChunkRepository()
+    chunker = SourceAwareChunker(load_retrieval_config().chunking)
+    chunk = chunker.chunks_for_source_object(phase4_source_object)[0]
+    chunks.upsert_many([chunk])
+    events = InMemoryEventBus()
+    embeddings = InMemoryEmbeddingRecordRepository()
+    provider = DeterministicEmbeddingProvider(dimensions=8, version="emb-v1")
+    embedding_service = EmbeddingService(
+        source_chunks=chunks,
+        embeddings=embeddings,
+        provider=provider,
+        publisher=EmbeddingPublisher(events),
+    )
+    queued = await embedding_service.queue_for_chunk(chunk.id)
+    await embedding_service.complete(queued.record.id)
+    jobs = InMemoryIndexJobRepository()
+    vectors = InMemoryVectorIndex()
+
+    async def unverified(*_args: object, **_kwargs: object) -> bool:
+        return False
+
+    vectors.verify_point = unverified  # type: ignore[method-assign]
+    worker = IndexWorker(
+        index_service=IndexJobService(jobs, IndexPublisher(events)),
+        embeddings=embeddings,
+        source_chunks=chunks,
+        embedding_provider=provider,
+        vector_index=vectors,
+    )
+    enqueued = await worker.handle_embedding_completed(events.list_events()[-1])
+    result = await worker.handle_index_requested(events.list_events()[-1])
+
+    assert result["status"] == "retryable"
+    assert result["reason"] == "vector_index_delivery_unverified"
+    assert (
+        jobs.get_by_id(enqueued["index_job_id"]).status
+        == IndexJobStatus.FAILED_RETRYABLE
+    )
