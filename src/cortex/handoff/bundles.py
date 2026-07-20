@@ -1,4 +1,5 @@
 """Construct safe handoff artifacts without accessing agent sessions."""
+
 from __future__ import annotations
 
 from typing import Any

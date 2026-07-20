@@ -80,8 +80,6 @@ async def test_json_rpc_rejects_invalid_request_shapes_and_ids() -> None:
 
 
 async def test_json_rpc_preserves_notifications_without_emitting_responses() -> None:
-    response = await handle_json_rpc_message(
-        {"jsonrpc": "2.0", "method": "tools/list"}
-    )
+    response = await handle_json_rpc_message({"jsonrpc": "2.0", "method": "tools/list"})
 
     assert response is None

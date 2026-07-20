@@ -37,16 +37,12 @@ class HybridCandidateFuser:
         )
         for channel, candidates in candidate_sets:
             for candidate in candidates:
-                if not self._is_eligible(
-                    candidate, workspace_id, allowed_providers
-                ):
+                if not self._is_eligible(candidate, workspace_id, allowed_providers):
                     continue
                 annotated = self._annotate(candidate, channel)
                 existing = merged.get(annotated.id)
                 merged[annotated.id] = (
-                    annotated
-                    if existing is None
-                    else self._merge(existing, annotated)
+                    annotated if existing is None else self._merge(existing, annotated)
                 )
         return [merged[candidate_id] for candidate_id in sorted(merged)]
 

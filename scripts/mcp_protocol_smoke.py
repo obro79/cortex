@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the local Cortex MCP stdio protocol without any external services."""
+
 from __future__ import annotations
 
 import json

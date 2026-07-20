@@ -45,9 +45,7 @@ class CandidateRanker:
                 score_provenance={
                     **existing.score_provenance,
                     **{
-                        name: max(
-                            float(existing.score_provenance.get(name, 0)), value
-                        )
+                        name: max(float(existing.score_provenance.get(name, 0)), value)
                         for name, value in candidate.score_provenance.items()
                     },
                 },

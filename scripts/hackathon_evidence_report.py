@@ -1,4 +1,5 @@
 """Static consistency report for the fixture-only hackathon packet."""
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

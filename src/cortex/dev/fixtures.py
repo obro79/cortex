@@ -322,7 +322,9 @@ class FixtureRepository:
                 provider=fixture.provider,
                 external_file_id=fixture.fixture_id,
                 external_object_key=f"{fixture.provider}:{fixture.fixture_id}",
-                file_name_hash=stable_hash(f"{fixture.fixture_id}.{fixture.media_kind}"),
+                file_name_hash=stable_hash(
+                    f"{fixture.fixture_id}.{fixture.media_kind}"
+                ),
                 content_type=(
                     "text/vtt" if fixture.media_kind == "caption" else "text/plain"
                 ),
