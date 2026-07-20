@@ -11,6 +11,7 @@ from cortex.indexing.vector_memory import InMemoryVectorIndex
 from cortex.normalization.repositories import InMemoryRelationshipSeedRepository
 from cortex.permissions.provider_acls import ProviderAclPrincipal
 from cortex.permissions.service import PermissionService
+from cortex.utils.asyncio import maybe_await
 
 from .candidates import Candidate
 from .evidence import EvidencePackBuilder
@@ -88,15 +89,17 @@ class RetrievalService:
             provider_filters=provider_filters,
             source_allowlist=source_allowlist,
         )
-        request = self.requests.create(
-            workspace_id=workspace_id,
-            query=query,
-            filters_json={
-                "provider_filters": plan.provider_filters,
-                "source_allowlist": plan.source_allowlist,
-                "caller_principal_count": len(caller_principals or []),
-            },
-            source_allowlist_snapshot_hash=plan.source_allowlist_snapshot_hash,
+        request = await maybe_await(
+            self.requests.create(
+                workspace_id=workspace_id,
+                query=query,
+                filters_json={
+                    "provider_filters": plan.provider_filters,
+                    "source_allowlist": plan.source_allowlist,
+                    "caller_principal_count": len(caller_principals or []),
+                },
+                source_allowlist_snapshot_hash=plan.source_allowlist_snapshot_hash,
+            )
         )
         lexical_candidates: list[Candidate] = []
         vector_candidates: list[Candidate] = []
@@ -128,11 +131,13 @@ class RetrievalService:
         if self.canonical_decisions is not None:
             additional_candidates.extend(
                 self.canonical_adapter.candidates_for_query(
-                    decisions=self.canonical_decisions.list_active(workspace_id),
+                    decisions=await maybe_await(
+                        self.canonical_decisions.list_active(workspace_id)
+                    ),
                     query=query,
                 )
             )
-        additional_candidates.extend(self._hint_candidates(workspace_id, plan))
+        additional_candidates.extend(await self._hint_candidates(workspace_id, plan))
         candidates = self.fuser.fuse(
             workspace_id=workspace_id,
             lexical_candidates=lexical_candidates,
@@ -140,6 +145,10 @@ class RetrievalService:
             provider_filters=plan.provider_filters,
             additional_candidates=additional_candidates,
             limit=int(self.config.candidate_retrieval["merged_candidate_limit"]),
+            ranker=self.ranker,
+            max_per_source_object=int(
+                self.config.candidate_retrieval["max_chunks_per_source_object"]
+            ),
         )
 
         permission_filter = PermissionFilter(
@@ -148,7 +157,7 @@ class RetrievalService:
             caller_principals=caller_principals,
         )
         allowed, exclusions = permission_filter.filter(candidates, plan)
-        expanded = self._expand_relationships(workspace_id, allowed)
+        expanded = await self._expand_relationships(workspace_id, allowed)
         allowed, expansion_exclusions = permission_filter.filter(expanded, plan)
         exclusions = self._merge_exclusions(exclusions, expansion_exclusions)
         ranked = self.ranker.rank(
@@ -182,18 +191,22 @@ class RetrievalService:
             versions=versions,
         )
         payloads["candidate_summary_json"]["errors"] = errors
-        evidence_pack = self.evidence.create(
-            workspace_id=workspace_id,
-            retrieval_request_id=request.id,
-            token_budget=int(
-                (self.config.token_budget or {}).get("max_evidence_pack_tokens", 4000)
-            ),
-            ranker_version=str(self.config.ranking["version"]),
-            **payloads,
+        evidence_pack = await maybe_await(
+            self.evidence.create(
+                workspace_id=workspace_id,
+                retrieval_request_id=request.id,
+                token_budget=int(
+                    (self.config.token_budget or {}).get(
+                        "max_evidence_pack_tokens", 4000
+                    )
+                ),
+                ranker_version=str(self.config.ranking["version"]),
+                **payloads,
+            )
         )
         await self.publisher.publish_created(evidence_pack)
-        completed_request = self.requests.mark_completed(
-            request.id, status=request_status
+        completed_request = await maybe_await(
+            self.requests.mark_completed(request.id, status=request_status)
         )
         return RetrievalServiceResponse(
             ok=request_status != "failed",
@@ -208,10 +221,12 @@ class RetrievalService:
     async def get_related_work(self, **kwargs: object) -> RetrievalServiceResponse:
         return await self.retrieve_context(**kwargs)  # type: ignore[arg-type]
 
-    def _hint_candidates(self, workspace_id: str, plan: object) -> list[Candidate]:
+    async def _hint_candidates(
+        self, workspace_id: str, plan: object
+    ) -> list[Candidate]:
         if not hasattr(self.source_chunks, "list_all"):
             return []
-        chunks = self.source_chunks.list_all(workspace_id)
+        chunks = await maybe_await(self.source_chunks.list_all(workspace_id))
         issue_ids = set(getattr(plan, "issue_ids", []))
         pr_numbers = set(getattr(plan, "pr_numbers", []))
         file_paths = set(getattr(plan, "file_paths", []))
@@ -241,7 +256,7 @@ class RetrievalService:
                 )
         return candidates
 
-    def _expand_relationships(
+    async def _expand_relationships(
         self, workspace_id: str, candidates: list[Candidate]
     ) -> list[Candidate]:
         if self.relationship_seeds is None:
@@ -251,7 +266,7 @@ class RetrievalService:
         }
         expanded = list(candidates)
         existing_chunk_ids = {candidate.source_chunk.id for candidate in candidates}
-        for seed in self.relationship_seeds.list_all():
+        for seed in await maybe_await(self.relationship_seeds.list_all()):
             if seed.workspace_id != workspace_id:
                 continue
             related_id = None
@@ -261,9 +276,10 @@ class RetrievalService:
                 related_id = seed.from_id
             if related_id is None:
                 continue
-            for chunk in self.source_chunks.list_by_source_object(
-                workspace_id, related_id
-            ):
+            chunks = await maybe_await(
+                self.source_chunks.list_by_source_object(workspace_id, related_id)
+            )
+            for chunk in chunks:
                 if chunk.id in existing_chunk_ids:
                     continue
                 existing_chunk_ids.add(chunk.id)
