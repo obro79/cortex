@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import Any, cast
 
 from cortex.contracts.entities import EmbeddingRecord, IndexJob, SourceChunk
-from cortex.contracts.enums import EmbeddingJobStatus, IndexJobStatus
+from cortex.contracts.enums import EmbeddingJobStatus, IndexJobStatus, SourceChunkStatus
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
 from cortex.embeddings.deterministic import EmbeddingProvider
+from cortex.events.retry import RetryPolicy
 from cortex.indexing.service import IndexJobService
 from cortex.interfaces.vector_index import VectorIndex
 from cortex.utils.asyncio import maybe_await
@@ -23,6 +24,7 @@ class IndexWorker:
         embedding_provider: EmbeddingProvider,
         vector_index: VectorIndex | None,
         index_version: str = "qdrant-v1",
+        retry_policy: RetryPolicy | None = None,
     ) -> None:
         self.index_service = index_service
         self.embeddings = embeddings
@@ -30,6 +32,7 @@ class IndexWorker:
         self.embedding_provider = embedding_provider
         self.vector_index = vector_index
         self.index_version = index_version
+        self.retry_policy = retry_policy or RetryPolicy()
 
     async def handle_embedding_completed(
         self, envelope: PipelineEventEnvelope
@@ -84,25 +87,37 @@ class IndexWorker:
             return {"status": "ignored", "reason": "unsupported_index_target"}
 
         try:
-            await maybe_await(self.index_service.repository.mark_processing(job.id))
+            claimed = await maybe_await(
+                self.index_service.repository.mark_processing(job.id)
+            )
+            if claimed is None:
+                current = cast(
+                    IndexJob,
+                    await maybe_await(self.index_service.repository.get_by_id(job.id)),
+                )
+                return {
+                    "status": (
+                        "completed"
+                        if current.status == IndexJobStatus.COMPLETED
+                        else "ignored"
+                    ),
+                    "index_job_id": current.id,
+                    "operation": "noop",
+                }
             await self._deliver(job)
             completed = await self.index_service.complete(job.id)
         except Exception as error:
-            failed = cast(
-                IndexJob,
-                await maybe_await(
-                    self.index_service.repository.mark_failed_retryable(
-                        job.id,
-                        self._error_code(error),
-                        type(error).__name__,
-                    )
-                ),
-            )
+            failed = await self._record_failure(job, error)
             return {
-                "status": "retryable",
-                "index_job_id": failed.id,
-                "reason": failed.last_error_code or "index_delivery_failed",
+                "status": self._result_status(failed),
+                "index_job_id": job.id,
+                "reason": (
+                    failed.last_error_code if failed is not None else "index_claim_lost"
+                )
+                or "index_delivery_failed",
             }
+        if completed is None:
+            return {"status": "ignored", "index_job_id": job.id, "operation": "noop"}
         return {"status": "completed", "index_job_id": completed.id}
 
     async def _deliver(self, job: IndexJob) -> None:
@@ -133,6 +148,11 @@ class IndexWorker:
         )
         if chunk.workspace_id != embedding.workspace_id:
             raise PermissionError("workspace_mismatch")
+        # Lifecycle may stale or delete the canonical chunk after the embedding
+        # completes. Never resurrect it in the derived index.
+        if chunk.status != SourceChunkStatus.ACTIVE:
+            await self.vector_index.delete(collection, point_id)
+            return
         output = await maybe_await(
             self.embedding_provider.embed(embedding.input_text_hash, chunk.text)
         )
@@ -157,15 +177,71 @@ class IndexWorker:
             "source_chunk_id": chunk.id,
             "chunk_type": chunk.chunk_type,
             "chunking_version": chunk.chunking_version,
+            "content_hash": chunk.text_hash,
+            "embedding_id": embedding.id,
             "embedding_model": embedding.model,
             "embedding_version": embedding.embedding_version,
             "status": str(chunk.status),
         }
-        for key in ("provider", "source_type", "source_allowlist_eligible"):
-            value = metadata.get(key)
-            if isinstance(value, str | bool):
-                payload[key] = value
+        provider = metadata.get("provider")
+        if isinstance(provider, str):
+            payload["provider"] = provider
+        source_type = metadata.get("source_type")
+        if not isinstance(source_type, str):
+            source_type = metadata.get("source_kind") or metadata.get("object_type")
+        if isinstance(source_type, str):
+            payload["source_type"] = source_type
         return payload
+
+    async def _record_failure(
+        self, job: IndexJob, error: Exception
+    ) -> IndexJob | None:
+        error_code = self._error_code(error)
+        error_message = type(error).__name__
+        if self._is_terminal(error):
+            return cast(
+                IndexJob | None,
+                await maybe_await(
+                    self.index_service.repository.mark_failed_terminal(
+                        job.id, error_code, error_message
+                    )
+                ),
+            )
+        attempt_count = job.attempt_count + 1
+        if self.retry_policy.exhausted(attempt_count):
+            return cast(
+                IndexJob | None,
+                await maybe_await(
+                    self.index_service.repository.mark_failed_terminal(
+                        job.id, error_code, error_message
+                    )
+                ),
+            )
+        return cast(
+            IndexJob | None,
+            await maybe_await(
+                self.index_service.repository.mark_failed_retryable(
+                    job.id,
+                    error_code,
+                    error_message,
+                    next_retry_at=self.retry_policy.retry_at(attempt_count=attempt_count),
+                )
+            ),
+        )
+
+    @staticmethod
+    def _result_status(failed: IndexJob | None) -> str:
+        if failed is None:
+            return "ignored"
+        return (
+            "terminal"
+            if failed.status == IndexJobStatus.FAILED_TERMINAL
+            else "retryable"
+        )
+
+    @staticmethod
+    def _is_terminal(error: Exception) -> bool:
+        return isinstance(error, (PermissionError, ValueError))
 
     @staticmethod
     def _error_code(error: Exception) -> str:
@@ -177,6 +253,8 @@ class IndexWorker:
             "embedding_dimensions_mismatch",
             "embedding_collection_missing",
             "embedding_not_completed",
+            "unsupported_index_operation",
+            "workspace_mismatch",
         }:
             return message
         return "index_delivery_failed"

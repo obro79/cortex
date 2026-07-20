@@ -11,7 +11,7 @@ from cortex.contracts.pipeline_events import PipelineEventEnvelope
 from cortex.embeddings.gemini import GeminiEmbeddingProvider
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.ingestion.payloads import FilePayloadStore
-from cortex.workers.factory import SqlPipelineDispatcher
+from cortex.workers.factory import SqlPipelineDispatcher, create_kafka_pipeline_consumer
 from cortex.workers.kafka import RetryablePipelineError
 
 
@@ -180,3 +180,16 @@ async def test_sql_dispatcher_downstream_publish_failure_is_retryable(
         "commit",
         "publish:source_object.upserted",
     ]
+
+
+def test_pipeline_consumer_requires_qdrant_when_no_index_is_injected() -> None:
+    with pytest.raises(ValueError, match="QDRANT_URL is required"):
+        create_kafka_pipeline_consumer(
+            settings=Settings(
+                cortex_event_bus="kafka",
+                cortex_state_backend="sql",
+                kafka_bootstrap_servers="localhost:9092",
+                database_url="postgresql+asyncpg://localhost/cortex",
+            ),
+            session_factory=FakeSessionFactory([]),  # type: ignore[arg-type]
+        )
