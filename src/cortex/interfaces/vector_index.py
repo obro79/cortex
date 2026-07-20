@@ -3,9 +3,7 @@ from typing import Any, Protocol
 
 VectorMetadataScalar = str | int | bool
 VectorMetadataList = list[str] | list[int]
-VectorMetadataFilter = Mapping[
-    str, VectorMetadataScalar | VectorMetadataList
-]
+VectorMetadataFilter = Mapping[str, VectorMetadataScalar | VectorMetadataList]
 
 
 class VectorIndex(Protocol):

@@ -190,7 +190,9 @@ async def test_index_worker_marks_invalid_job_terminal(
     embeddings = InMemoryEmbeddingRecordRepository()
     provider = DeterministicEmbeddingProvider(dimensions=8, version="emb-v1")
     embedding_service = EmbeddingService(
-        source_chunks=chunks, embeddings=embeddings, provider=provider,
+        source_chunks=chunks,
+        embeddings=embeddings,
+        provider=provider,
         publisher=EmbeddingPublisher(events),
     )
     queued = await embedding_service.queue_for_chunk(chunk.id)
@@ -198,8 +200,11 @@ async def test_index_worker_marks_invalid_job_terminal(
     jobs = InMemoryIndexJobRepository()
     worker = IndexWorker(
         index_service=IndexJobService(jobs, IndexPublisher(events)),
-        embeddings=embeddings, source_chunks=chunks, embedding_provider=provider,
-        vector_index=InMemoryVectorIndex(), retry_policy=RetryPolicy(max_attempts=1),
+        embeddings=embeddings,
+        source_chunks=chunks,
+        embedding_provider=provider,
+        vector_index=InMemoryVectorIndex(),
+        retry_policy=RetryPolicy(max_attempts=1),
     )
     enqueued = await worker.handle_embedding_completed(events.list_events()[-1])
     job = jobs.get_by_id(enqueued["index_job_id"])

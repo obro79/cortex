@@ -64,8 +64,9 @@ class FakeQdrantClient:
         return SimpleNamespace()
 
 
-async def test_qdrant_adapter_bootstraps_idempotently_and_uses_stable_point_ids(
-) -> None:
+async def test_qdrant_adapter_bootstraps_idempotently_and_uses_stable_point_ids() -> (
+    None
+):
     client = FakeQdrantClient()
     index = QdrantVectorIndex(client)
     filtered_index: FilteredVectorIndex = index
@@ -115,8 +116,9 @@ async def test_qdrant_adapter_bootstraps_idempotently_and_uses_stable_point_ids(
     assert await index.search("cortex-test-gemini-v1-2", [0.3, 0.4], 10) == []
 
 
-async def test_qdrant_adapter_rejects_content_bearing_payloads_and_dimension_drift(
-) -> None:
+async def test_qdrant_adapter_rejects_content_bearing_payloads_and_dimension_drift() -> (
+    None
+):
     client = FakeQdrantClient()
     index = QdrantVectorIndex(client)
     await index.ensure_collection("cortex-test-gemini-v1-2", 2)
@@ -165,8 +167,9 @@ async def test_qdrant_health_reports_client_failures_without_raising() -> None:
     assert await index.health() is False
 
 
-async def test_qdrant_adapter_uses_query_points_and_match_any_with_real_client(
-) -> None:
+async def test_qdrant_adapter_uses_query_points_and_match_any_with_real_client() -> (
+    None
+):
     """Exercise the Qdrant 1.18 client surface instead of a compatibility fake."""
     from qdrant_client import AsyncQdrantClient
 

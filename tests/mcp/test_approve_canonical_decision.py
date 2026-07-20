@@ -56,9 +56,7 @@ async def test_approve_canonical_decision_tool_success_and_retrieval_priority() 
             "action": "approve",
         },
     )
-    future = await server.call_tool(
-        "retrieve_context", {"query": "session storage"}
-    )
+    future = await server.call_tool("retrieve_context", {"query": "session storage"})
 
     assert approval["ok"] is True
     assert approval["result"]["decision"]["status"] == "approved"
