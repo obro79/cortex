@@ -23,6 +23,17 @@ def test_fixture_seed_reset_endpoints() -> None:
     assert reset.json()["state"]["fixture_counts"]["source_objects"] == 0
 
 
+def test_state_is_explicitly_a_non_live_fixture_adapter() -> None:
+    client = enabled_client()
+    response = client.get("/dev/state")
+
+    assert response.status_code == 200
+    assert response.json()["live_data"] is False
+    assert response.json()["seed"]["seeded"] is False
+    assert "runs" in response.json()
+    assert "gate" in response.json()
+
+
 def test_pipeline_query_evidence_and_eval_endpoints() -> None:
     client = enabled_client()
     seed = client.post("/dev/fixtures/seed")

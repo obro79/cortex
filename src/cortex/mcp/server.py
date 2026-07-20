@@ -16,6 +16,7 @@ from cortex.context_gate.service import ContextGateService
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.handoff import create_handoff_bundle
 from cortex.retrieval.defaults import create_empty_retrieval_service
+from cortex.runtime import CortexAuthority, CortexRuntime
 
 TOOL_NAMES = (
     "retrieve_context",
@@ -46,6 +47,24 @@ _canonical_service = CanonicalDecisionService(
     gates=_context_gate_results,
     publisher=CanonicalDecisionPublisher(InMemoryEventBus()),
 )
+_local_runtime = CortexRuntime(
+    retrieval=_retrieval_service, context_gate=_context_gate_service, live_data=False
+)
+
+
+class McpServer:
+    """MCP adapter with a host-resolved authority and an injected runtime."""
+
+    def __init__(self, *, runtime: CortexRuntime, authority: CortexAuthority) -> None:
+        self.runtime = runtime
+        self.authority = authority
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        return await call_tool(
+            name, arguments, runtime=self.runtime, authority=self.authority
+        )
 
 
 def list_tools() -> tuple[str, ...]:
@@ -53,25 +72,54 @@ def list_tools() -> tuple[str, ...]:
 
 
 async def call_tool(
-    name: str, arguments: dict[str, Any] | None = None
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    *,
+    runtime: CortexRuntime | None = None,
+    authority: CortexAuthority | None = None,
 ) -> dict[str, Any]:
+    """Call one tool.
+
+    Production callers must construct :class:`McpServer` with host-derived
+    authority.  This compatibility function keeps the deterministic local CLI
+    fixture, whose scope is fixed to the requested test workspace only.
+    """
+    args = arguments or {}
+    local_compatibility = runtime is None
+    if runtime is None:
+        runtime = _local_runtime
+        workspace_hint = args.get("workspace_id")
+        if not isinstance(workspace_hint, str) or not workspace_hint:
+            workspace_hint = "ws_1"
+        authority = CortexAuthority(
+            workspace_id=workspace_hint,
+            actor_id=None,
+            trace_id="mcp-local",
+        )
+    if authority is None:
+        return {"ok": False, "error": "authority_unavailable"}
     if name not in TOOL_NAMES:
         return {"ok": False, "error": "unknown_tool", "tool": name}
     if name == "create_handoff_bundle":
         return create_handoff_bundle(arguments or {})
     if name in {"retrieve_context", "get_related_work"}:
-        args = arguments or {}
         allowed = {"workspace_id", "query", "source_allowlist", "provider_filters"}
         unknown = sorted(set(args) - allowed)
         if unknown:
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
-        if "workspace_id" not in args or "query" not in args:
+        if "query" not in args or (local_compatibility and "workspace_id" not in args):
             return {"ok": False, "error": "missing_required_arguments"}
-        response = await getattr(_retrieval_service, name)(
-            workspace_id=str(args["workspace_id"]),
+        if (
+            "workspace_id" in args
+            and str(args["workspace_id"]) != authority.workspace_id
+        ):
+            return {"ok": False, "error": "workspace_scope_mismatch"}
+        response = await runtime.retrieve(
+            authority=authority,
             query=str(args["query"]),
             source_allowlist=list(args.get("source_allowlist", [])),
             provider_filters=list(args.get("provider_filters", [])),
+            related=name == "get_related_work",
         )
         return {
             "ok": response.ok,
@@ -84,7 +132,6 @@ async def call_tool(
             "latency_ms": response.latency_ms,
         }
     if name == "check_context_gate":
-        args = arguments or {}
         allowed = {
             "workspace_id",
             "query",
@@ -96,12 +143,15 @@ async def call_tool(
         unknown = sorted(set(args) - allowed)
         if unknown:
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
-        if "workspace_id" not in args:
-            return {"ok": False, "error": "missing_required_arguments"}
         if "query" not in args and "evidence_pack_id" not in args:
             return {"ok": False, "error": "missing_required_arguments"}
-        response = await _context_gate_service.check_context_gate(
-            workspace_id=str(args["workspace_id"]),
+        if (
+            "workspace_id" in args
+            and str(args["workspace_id"]) != authority.workspace_id
+        ):
+            return {"ok": False, "error": "workspace_scope_mismatch"}
+        gate_response = await runtime.check_gate(
+            authority=authority,
             query=str(args["query"]) if "query" in args else None,
             evidence_pack_id=(
                 str(args["evidence_pack_id"]) if "evidence_pack_id" in args else None
@@ -110,14 +160,16 @@ async def call_tool(
             source_allowlist=list(args.get("source_allowlist", [])),
             provider_filters=list(args.get("provider_filters", [])),
         )
+        if gate_response is None:
+            return {"ok": False, "tool": name, "error": "context_gate_unavailable"}
         return {
-            "ok": response.ok,
+            "ok": gate_response.ok,
             "tool": name,
-            "context_gate_result_id": response.context_gate_result_id,
-            "status": response.status,
-            "text": response.text,
-            "result": response.result,
-            **({"error": response.error} if response.error else {}),
+            "context_gate_result_id": gate_response.context_gate_result_id,
+            "status": gate_response.status,
+            "text": gate_response.text,
+            "result": gate_response.result,
+            **({"error": gate_response.error} if gate_response.error else {}),
         }
     if name == "propose_canonical_decision":
         args = arguments or {}
@@ -138,7 +190,7 @@ async def call_tool(
             return {"ok": False, "error": "missing_required_arguments"}
         if "evidence_pack_id" not in args and "context_gate_result_id" not in args:
             return {"ok": False, "error": "missing_required_arguments"}
-        response = _canonical_service.propose_canonical_decision(
+        canonical_response = _canonical_service.propose_canonical_decision(
             workspace_id=str(args["workspace_id"]),
             evidence_pack_id=(
                 str(args["evidence_pack_id"]) if "evidence_pack_id" in args else None
@@ -157,11 +209,11 @@ async def call_tool(
             actor_id=str(args["actor_id"]) if "actor_id" in args else None,
         )
         return {
-            "ok": response.ok,
+            "ok": canonical_response.ok,
             "tool": name,
-            "text": response.text,
-            "result": response.result,
-            **({"error": response.error} if response.error else {}),
+            "text": canonical_response.text,
+            "result": canonical_response.result,
+            **({"error": canonical_response.error} if canonical_response.error else {}),
         }
     if name == "approve_canonical_decision":
         args = arguments or {}
@@ -178,7 +230,7 @@ async def call_tool(
             return {"ok": False, "error": "unknown_arguments", "fields": unknown}
         if "decision_id" not in args or "action" not in args:
             return {"ok": False, "error": "missing_required_arguments"}
-        response = await _canonical_service.approve_canonical_decision(
+        canonical_response = await _canonical_service.approve_canonical_decision(
             decision_id=str(args["decision_id"]),
             action=str(args["action"]),
             actor_id=str(args["actor_id"]) if "actor_id" in args else None,
@@ -191,11 +243,11 @@ async def call_tool(
             ),
         )
         return {
-            "ok": response.ok,
+            "ok": canonical_response.ok,
             "tool": name,
-            "text": response.text,
-            "result": response.result,
-            **({"error": response.error} if response.error else {}),
+            "text": canonical_response.text,
+            "result": canonical_response.result,
+            **({"error": canonical_response.error} if canonical_response.error else {}),
         }
     return {
         "ok": False,
@@ -243,6 +295,31 @@ def list_tool_definitions() -> list[dict[str, object]]:
             },
         }
     )
+    for name in ("retrieve_context", "get_related_work"):
+        tool = next(item for item in definitions if item["name"] == name)
+        tool["inputSchema"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "minLength": 1},
+                "source_allowlist": {"type": "array", "items": {"type": "string"}},
+                "provider_filters": {"type": "array", "items": {"type": "string"}},
+            },
+        }
+    gate = next(item for item in definitions if item["name"] == "check_context_gate")
+    gate["inputSchema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "query": {"type": "string", "minLength": 1},
+            "evidence_pack_id": {"type": "string", "minLength": 1},
+            "task_hints": {"type": "object"},
+            "source_allowlist": {"type": "array", "items": {"type": "string"}},
+            "provider_filters": {"type": "array", "items": {"type": "string"}},
+        },
+        "anyOf": [{"required": ["query"]}, {"required": ["evidence_pack_id"]}],
+    }
     return definitions
 
 

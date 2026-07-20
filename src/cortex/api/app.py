@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from cortex.api.rate_limit import install_api_rate_limit
 from cortex.api.routes.billing import router as billing_router
 from cortex.api.routes.case_study import router as case_study_router
+from cortex.api.routes.context import router as context_router
 from cortex.api.routes.demo import router as demo_router
 from cortex.api.routes.dev import router as dev_router
 from cortex.api.routes.github import router as github_router
@@ -40,6 +41,7 @@ from cortex.observability.tracing import init_tracing
 from cortex.permissions import InMemoryProviderPrincipalMappingRepository
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
+from cortex.runtime import CortexRuntime
 from cortex.security.audit import InMemoryAuditLogRepository
 from cortex.tenancy import InMemoryTenantRepository, SqlAlchemyTenantRepository
 from cortex.ui.source_health import SourceHealthViewService
@@ -49,6 +51,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     ephemeral_cache: EphemeralCacheService | None = None,
+    cortex_runtime: CortexRuntime | None = None,
 ) -> FastAPI:
     resolved = settings or get_settings()
     setup_logging(resolved.cortex_log_level)
@@ -56,6 +59,8 @@ def create_app(
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    if cortex_runtime is not None:
+        app.state.cortex_runtime = cortex_runtime
     session_factory = (
         create_sessionmaker(resolved.database_url)
         if resolved.cortex_state_backend == "sql"
@@ -127,6 +132,9 @@ def create_app(
     app.include_router(case_study_router)
     app.include_router(billing_router)
     app.include_router(lifecycle_router)
+    # This boundary intentionally has no in-memory fallback: deployers inject a
+    # durable retrieval runtime, and disabled public auth remains explicit.
+    app.include_router(context_router)
     if resolved.cortex_dev_workbench_enabled and resolved.cortex_env not in {
         "local",
         "test",

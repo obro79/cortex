@@ -72,3 +72,24 @@ async def get_evidence_pack(request: Request, evidence_pack_id: str) -> dict[str
 @router.post("/evals/run")
 async def run_evals(request: Request) -> dict[str, Any]:
     return get_workbench_service(request).run_evals()
+
+
+@router.get("/state")
+async def state(request: Request) -> dict[str, Any]:
+    """Local UI fixture adapter only; never represents live retrieval data."""
+    service = get_workbench_service(request)
+    summary = service.state_summary()
+    return {
+        "live_data": False,
+        "seed": {
+            "seeded": summary["seeded"],
+            "fixture_counts": summary["fixture_counts"],
+        },
+        "runs": {
+            "latest_run_id": summary["latest_run_id"],
+            "latest_run_status": summary["latest_run_status"],
+            "event_count": summary["event_count"],
+        },
+        "gate": {"latest_status": summary["latest_gate_status"]},
+        "evidence_pack_ids": summary["evidence_pack_ids"],
+    }
