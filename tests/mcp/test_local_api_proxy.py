@@ -6,12 +6,13 @@ import httpx
 
 from cortex.mcp.proxy import ApiTaskContextProxy, LocalMcpProxyConfig
 from cortex.mcp.server import create_local_proxy_server, handle_json_rpc_message
+from cortex.retrieval.task_context import TaskContextRequest
 
 
 def _config() -> LocalMcpProxyConfig:
     return LocalMcpProxyConfig.from_environment(
         {
-            "CORTEX_MCP_API_URL": "http://cortex.local",
+            "CORTEX_MCP_API_URL": "http://127.0.0.1:8000",
             "CORTEX_MCP_HEADERS_JSON": json.dumps(
                 {
                     "x-cortex-workspace-id": "configured-workspace",
@@ -57,7 +58,7 @@ async def test_local_proxy_uses_only_configured_transport_identity() -> None:
     )
 
     assert response["trace_id"] == "api-trace"
-    assert observed["url"] == "http://cortex.local/v1/context/task-context"
+    assert observed["url"] == "http://127.0.0.1:8000/v1/context/task-context"
     headers = observed["headers"]
     assert isinstance(headers, dict)
     assert headers["x-cortex-workspace-id"] == "configured-workspace"
@@ -132,7 +133,7 @@ def test_local_proxy_config_rejects_unsafe_headers() -> None:
     try:
         LocalMcpProxyConfig.from_environment(
             {
-                "CORTEX_MCP_API_URL": "http://cortex.local",
+                "CORTEX_MCP_API_URL": "http://127.0.0.1:8000",
                 "CORTEX_MCP_HEADERS_JSON": '{"host":"attacker.local"}',
             }
         )
@@ -140,6 +141,61 @@ def test_local_proxy_config_rejects_unsafe_headers() -> None:
         assert "not allowed" in str(error)
     else:
         raise AssertionError("unsafe configured header must be rejected")
+
+
+def test_local_proxy_config_rejects_remote_cleartext_http() -> None:
+    try:
+        LocalMcpProxyConfig.from_environment(
+            {
+                "CORTEX_MCP_API_URL": "http://cortex.example.com",
+                "CORTEX_MCP_HEADERS_JSON": '{"authorization":"Bearer token"}',
+            }
+        )
+    except ValueError as error:
+        assert "requires HTTPS" in str(error)
+    else:
+        raise AssertionError("remote cleartext API URL must be rejected")
+
+
+async def test_local_proxy_ignores_ambient_proxy_environment(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class CapturingClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        async def __aenter__(self) -> CapturingClient:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, *args: object, **kwargs: object) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "ok": False,
+                    "status": "failed",
+                    "trace_id": "api-trace",
+                    "live_data": True,
+                    "error": {
+                        "code": "RETRIEVAL_UNAVAILABLE",
+                        "message": "temporary",
+                        "retryable": True,
+                    },
+                },
+            )
+
+    monkeypatch.setattr("cortex.mcp.proxy.httpx.AsyncClient", CapturingClient)
+    proxy = ApiTaskContextProxy(_config())
+
+    await proxy.get_task_context(
+        TaskContextRequest.model_validate(
+            {"task": {"objective": "find rollout context"}}
+        )
+    )
+
+    assert captured["trust_env"] is False
 
 
 async def test_proxy_mode_discovery_is_limited_to_proxy_and_safe_handoff() -> None:

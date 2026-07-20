@@ -57,6 +57,14 @@ class LocalMcpProxyConfig:
             raise McpProxyConfigurationError(
                 "CORTEX_MCP_API_URL is not a valid API base"
             )
+        if parsed.scheme == "http" and parsed.hostname not in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }:
+            raise McpProxyConfigurationError(
+                "CORTEX_MCP_API_URL requires HTTPS unless it targets loopback"
+            )
 
         headers = _headers_from_json(values.get("CORTEX_MCP_HEADERS_JSON", ""))
         timeout_seconds = _timeout_from_environment(
@@ -142,6 +150,7 @@ class ApiTaskContextProxy:
             async with httpx.AsyncClient(
                 timeout=self.config.timeout_seconds,
                 transport=self.transport,
+                trust_env=False,
             ) as client:
                 response = await client.post(
                     self.config.endpoint_url,

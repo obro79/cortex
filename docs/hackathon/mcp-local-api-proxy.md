@@ -20,8 +20,10 @@ For the current local public-auth API, `CORTEX_PUBLIC_AUTH_ENABLED=true` is
 also required on the API process. `CORTEX_MCP_HEADERS_JSON` may include an
 `authorization` header for a future authenticated deployment, but values are
 never logged or returned through JSON-RPC. The proxy rejects unsafe transport
-headers and invalid configuration, bounds each request to 1–30 seconds, and
-reports only redacted diagnostics to stderr. JSON-RPC remains stdout-only.
+headers and invalid configuration, permits cleartext HTTP only for `localhost`,
+`127.0.0.1`, or `::1`, and requires HTTPS for every remote API. It ignores
+ambient HTTP proxy environment variables, bounds each request to 1–30 seconds,
+and reports only redacted diagnostics to stderr. JSON-RPC remains stdout-only.
 
 This is not OAuth, device login, session scraping, or native Claude/Codex
 session resume. Fixture mode remains available with `CORTEX_MCP_MODE=fixture`,
