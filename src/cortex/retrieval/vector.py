@@ -42,11 +42,14 @@ class VectorRetriever:
                 continue
             chunk_id = payload.get("source_chunk_id")
             if isinstance(chunk_id, str):
+                raw_score = result.get("score", 1.0)
+                score = float(raw_score) if isinstance(raw_score, int | float) else 1.0
                 candidates.append(
                     Candidate(
                         source_chunk=self.source_chunks.get_by_id(chunk_id),
-                        vector_score=1.0,
+                        vector_score=score,
                         paths={"vector"},
+                        score_provenance={"vector": score},
                     )
                 )
         return candidates

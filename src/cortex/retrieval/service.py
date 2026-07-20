@@ -15,6 +15,7 @@ from cortex.permissions.service import PermissionService
 from .candidates import Candidate
 from .evidence import EvidencePackBuilder
 from .fts import FtsRetriever
+from .hybrid import HybridCandidateFuser
 from .permissions import PermissionFilter
 from .publishers import EvidencePackPublisher
 from .query import QueryPlanner
@@ -71,6 +72,7 @@ class RetrievalService:
         self.permission_service = permission_service
         self.builder = EvidencePackBuilder()
         self.ranker = CandidateRanker(config.ranking)
+        self.fuser = HybridCandidateFuser()
 
     async def retrieve_context(
         self,
@@ -96,10 +98,12 @@ class RetrievalService:
             },
             source_allowlist_snapshot_hash=plan.source_allowlist_snapshot_hash,
         )
-        candidates: list[Candidate] = []
+        lexical_candidates: list[Candidate] = []
+        vector_candidates: list[Candidate] = []
+        additional_candidates: list[Candidate] = []
         errors: dict[str, str] = {}
         try:
-            candidates.extend(
+            lexical_candidates.extend(
                 self.fts.retrieve(
                     workspace_id=workspace_id,
                     plan=plan,
@@ -110,7 +114,7 @@ class RetrievalService:
         except Exception as error:
             errors["fts"] = type(error).__name__
         try:
-            candidates.extend(
+            vector_candidates.extend(
                 await self.vector.retrieve(
                     workspace_id=workspace_id,
                     plan=plan,
@@ -122,13 +126,20 @@ class RetrievalService:
         except Exception as error:
             errors["vector"] = type(error).__name__
         if self.canonical_decisions is not None:
-            candidates.extend(
+            additional_candidates.extend(
                 self.canonical_adapter.candidates_for_query(
                     decisions=self.canonical_decisions.list_active(workspace_id),
                     query=query,
                 )
             )
-        candidates.extend(self._hint_candidates(workspace_id, plan))
+        additional_candidates.extend(self._hint_candidates(workspace_id, plan))
+        candidates = self.fuser.fuse(
+            workspace_id=workspace_id,
+            lexical_candidates=lexical_candidates,
+            vector_candidates=vector_candidates,
+            provider_filters=plan.provider_filters,
+            additional_candidates=additional_candidates,
+        )
 
         permission_filter = PermissionFilter(
             workspace_id=workspace_id,
