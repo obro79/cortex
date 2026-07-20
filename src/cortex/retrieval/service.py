@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from cortex.canonical_memory.repositories import InMemoryCanonicalDecisionRepository
 from cortex.canonical_memory.retrieval_priority import CanonicalDecisionCandidateAdapter
 from cortex.chunking.config import RetrievalConfig
-from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
-from cortex.indexing.vector_memory import InMemoryVectorIndex
+from cortex.interfaces.vector_index import VectorIndex
 from cortex.normalization.repositories import InMemoryRelationshipSeedRepository
 from cortex.permissions.provider_acls import ProviderAclPrincipal
 from cortex.permissions.service import PermissionService
@@ -21,10 +21,6 @@ from .permissions import PermissionFilter
 from .publishers import EvidencePackPublisher
 from .query import QueryPlanner
 from .ranking import CandidateRanker
-from .repositories import (
-    InMemoryEvidencePackRepository,
-    InMemoryRetrievalRequestRepository,
-)
 from .vector import VectorRetriever
 
 
@@ -44,14 +40,16 @@ class RetrievalService:
         self,
         *,
         config: RetrievalConfig,
-        source_chunks: InMemorySourceChunkRepository,
-        vector_index: InMemoryVectorIndex,
-        request_repository: InMemoryRetrievalRequestRepository,
-        evidence_repository: InMemoryEvidencePackRepository,
+        source_chunks: Any,
+        vector_index: VectorIndex,
+        request_repository: Any,
+        evidence_repository: Any,
         publisher: EvidencePackPublisher,
         canonical_decisions: InMemoryCanonicalDecisionRepository | None = None,
         relationship_seeds: InMemoryRelationshipSeedRepository | None = None,
         permission_service: PermissionService | None = None,
+        vector_collection: str = "fixture-cortex-dev",
+        query_embedder: DeterministicEmbeddingProvider | None = None,
     ) -> None:
         self.config = config
         self.source_chunks = source_chunks
@@ -60,9 +58,11 @@ class RetrievalService:
         self.vector = VectorRetriever(
             vector_index=vector_index,
             source_chunks=source_chunks,
-            embedder=DeterministicEmbeddingProvider(
+            embedder=query_embedder
+            or DeterministicEmbeddingProvider(
                 dimensions=16, version=config.embeddings.version
             ),
+            collection=vector_collection,
         )
         self.requests = request_repository
         self.evidence = evidence_repository
