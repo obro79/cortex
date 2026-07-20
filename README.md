@@ -73,11 +73,40 @@ pytest
 docker compose config
 ```
 
-Run the API locally:
+Run the normal API locally:
 
 ```bash
 uvicorn cortex.api.app:create_app --factory --reload
 ```
+
+### Launch the local hackathon demo
+
+The demo launcher enables the fixture workbench **only for local use**. It does
+not authenticate to a provider or claim live data:
+
+```bash
+bash scripts/run_hackathon_demo.sh
+```
+
+Then open:
+
+- `http://127.0.0.1:8000/case-study` for the proof page.
+- `http://127.0.0.1:8000/dev/workbench` for the interactive fixture workbench.
+- `http://127.0.0.1:8000/demo/evidence` for the sanitized source/media/pipeline
+  evidence report used during the demo.
+
+In a second terminal, these offline checks are safe to run without credentials:
+
+```bash
+uv run python scripts/hackathon_demo_rehearsal.py --format human
+uv run python scripts/demo_evidence_report.py --format human
+uv run python scripts/kafka_slack_e2e_smoke.py --mode fixture
+uv run python scripts/github_snapshot_smoke.py --format human
+uv run python scripts/mcp_protocol_smoke.py
+```
+
+`kafka_slack_e2e_smoke.py --mode preflight` only reports whether the required
+Slack environment-variable names are present; it never contacts Slack.
 
 ## Demo and MCP rehearsal
 
