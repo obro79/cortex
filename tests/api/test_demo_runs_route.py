@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from cortex.api.app import create_app
+from cortex.api.routes.demo_runs import router
+from cortex.auth.dependencies import AUTH_EMAIL_HEADER
+from cortex.config import Settings
+from cortex.demo_runs import FixtureDemoRunReportReader
+from cortex.ui.auth import WORKSPACE_ID_HEADER
+
+
+def _client(*, reader: object | None = None) -> tuple[TestClient, dict[str, str]]:
+    app = create_app(Settings(cortex_public_auth_enabled=True))
+    app.include_router(router)
+    if reader is not None:
+        app.state.demo_run_report_reader = reader
+    repository = app.state.tenant_repository
+    user = repository.upsert_user(
+        auth_provider="local",
+        auth_subject="owner@example.com",
+        email="owner@example.com",
+    )
+    _, workspace, _ = repository.create_organization_with_workspace(
+        user_id=user.id,
+        organization_name="Acme",
+        workspace_name="Engineering",
+        workspace_slug="engineering",
+    )
+    return TestClient(app), {
+        AUTH_EMAIL_HEADER: "owner@example.com",
+        WORKSPACE_ID_HEADER: workspace.id,
+        "x-request-id": "demo-run-trace",
+    }
+
+
+def test_latest_demo_run_is_explicitly_unavailable_for_fixture_data() -> None:
+    client, headers = _client(reader=FixtureDemoRunReportReader())
+
+    response = client.get("/v1/demo-runs/latest", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is False
+    assert body["trace_id_hash"].startswith("sha256:")
+    assert body["report"] is None
+    assert "https://" not in response.text
+    assert "Postgres is the approved" not in response.text
+    assert "citation_url" not in response.text
+
+
+def test_source_health_returns_fixture_projection_without_live_report() -> None:
+    client, headers = _client(reader=FixtureDemoRunReportReader())
+
+    response = client.get("/v1/demo-runs/source-health", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["readiness"] == "partial"
+    assert body["freshness"] == "fresh"
+    assert {source["mode"] for source in body["sources"]} == {"fixture"}

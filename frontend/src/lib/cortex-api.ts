@@ -109,3 +109,67 @@ export type RuntimeHealth = { status: string; checks?: Record<string, string>; i
 export function getRuntimeHealth() {
   return cortexApi<RuntimeHealth>("health/ready");
 }
+
+export type DemoRunIssue = { code: string; severity: "warning" | "error" };
+export type LiveRunCounts = {
+  raw_events: number;
+  source_objects: number;
+  source_chunks: number;
+  embeddings_completed: number;
+  vector_points_verified: number;
+  query_requests: number;
+  evidence_packs: number;
+  failures: number;
+};
+export type DemoSourceHealth = {
+  source_ref_hash: string;
+  provider: string;
+  mode: "live" | "imported_snapshot" | "fixture";
+  readiness: "ready" | "partial" | "not_ready" | "unavailable";
+  freshness: "fresh" | "stale" | "unknown";
+  freshness_seconds: number | null;
+  counts: LiveRunCounts;
+  warnings: DemoRunIssue[];
+  errors: DemoRunIssue[];
+};
+export type DemoRunReport = {
+  schema_version: "live-context-run-report/v1";
+  mode: "controlled_live_run";
+  outcome: "passed" | "failed" | "partial";
+  live_data: boolean;
+  run_id_hash: string;
+  environment: string;
+  provider: string;
+  source_ref_hash: string;
+  collection: string;
+  counts: LiveRunCounts;
+  freshness_seconds: number | null;
+  stages: Record<string, string>;
+  disclosure: string;
+  next_action: string | null;
+};
+export type DemoRunReportStatus = {
+  contract_version: "cortex.demo_run_report_status.v1";
+  trace_id_hash: string;
+  available: boolean;
+  report: DemoRunReport | null;
+  issues: DemoRunIssue[];
+};
+export type SourceHealthStatus = {
+  contract_version: "cortex.source_health.v1";
+  trace_id_hash: string;
+  available: boolean;
+  readiness: "ready" | "partial" | "not_ready" | "unavailable";
+  freshness: "fresh" | "stale" | "unknown";
+  sources: DemoSourceHealth[];
+  issues: DemoRunIssue[];
+};
+
+/** Safe aggregate control-plane reads; unavailable is a first-class response. */
+export function getDemoRunReport() {
+  return cortexApi<DemoRunReportStatus>("v1/demo-runs/latest");
+}
+
+export function getSourceHealthStatus() {
+  return cortexApi<SourceHealthStatus>("v1/demo-runs/source-health");
+}
