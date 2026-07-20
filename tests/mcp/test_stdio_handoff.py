@@ -46,3 +46,42 @@ async def test_json_rpc_rejects_invalid_parameters() -> None:
 
     assert response is not None
     assert response["error"] == {"code": -32602, "message": "Invalid params"}
+
+
+async def test_json_rpc_rejects_invalid_request_shapes_and_ids() -> None:
+    invalid_id = await handle_json_rpc_message(
+        {"jsonrpc": "2.0", "id": True, "method": "tools/list"}
+    )
+    missing_method = await handle_json_rpc_message({"jsonrpc": "2.0", "id": 4})
+    blank_tool_name = await handle_json_rpc_message(
+        {
+            "jsonrpc": "2.0",
+            "id": "blank-tool",
+            "method": "tools/call",
+            "params": {"name": " ", "arguments": {}},
+        }
+    )
+
+    assert invalid_id == {
+        "jsonrpc": "2.0",
+        "id": None,
+        "error": {"code": -32600, "message": "Invalid Request"},
+    }
+    assert missing_method == {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "error": {"code": -32600, "message": "Invalid Request"},
+    }
+    assert blank_tool_name == {
+        "jsonrpc": "2.0",
+        "id": "blank-tool",
+        "error": {"code": -32602, "message": "Invalid params"},
+    }
+
+
+async def test_json_rpc_preserves_notifications_without_emitting_responses() -> None:
+    response = await handle_json_rpc_message(
+        {"jsonrpc": "2.0", "method": "tools/list"}
+    )
+
+    assert response is None

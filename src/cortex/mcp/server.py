@@ -254,6 +254,17 @@ def _json_rpc_error(request_id: object, code: int, message: str) -> dict[str, ob
     }
 
 
+def _is_valid_request_id(value: object) -> bool:
+    """Return whether a JSON-RPC request id can be echoed safely."""
+    return value is None or (
+        isinstance(value, (str, int)) and not isinstance(value, bool)
+    )
+
+
+def _is_valid_method(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
     """Handle one JSON-RPC 2.0 request for the newline-delimited stdio server."""
     if not isinstance(message, Mapping) or message.get("jsonrpc") != "2.0":
@@ -263,7 +274,9 @@ async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
     is_notification = "id" not in message
     method = message.get("method")
     params = message.get("params", {})
-    if not isinstance(method, str):
+    if not is_notification and not _is_valid_request_id(request_id):
+        return _json_rpc_error(None, -32600, "Invalid Request")
+    if not _is_valid_method(method):
         if is_notification:
             return None
         return _json_rpc_error(request_id, -32600, "Invalid Request")
@@ -283,11 +296,15 @@ async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
     elif method == "tools/call":
         name = params.get("name")
         arguments = params.get("arguments", {})
-        if not isinstance(name, str) or not isinstance(arguments, dict):
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or not isinstance(arguments, Mapping)
+        ):
             if is_notification:
                 return None
             return _json_rpc_error(request_id, -32602, "Invalid params")
-        response = await call_tool(name, arguments)
+        response = await call_tool(name, dict(arguments))
         result = {
             "content": [{"type": "text", "text": json.dumps(response, sort_keys=True)}],
             "structuredContent": response,
@@ -322,3 +339,7 @@ async def serve_stdio() -> None:
 def main() -> None:
     """Console-script entry point for the local MCP stdio server."""
     asyncio.run(serve_stdio())
+
+
+if __name__ == "__main__":
+    main()
