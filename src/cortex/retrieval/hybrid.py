@@ -54,9 +54,9 @@ class HybridCandidateFuser:
                 raise ValueError(
                     "max_per_source_object is required when limiting with a ranker"
                 )
-            return ranker.rank(
-                fused, max_per_source_object=max_per_source_object
-            )[:limit]
+            return ranker.rank(fused, max_per_source_object=max_per_source_object)[
+                :limit
+            ]
         fused.sort(
             key=lambda candidate: (
                 -max(

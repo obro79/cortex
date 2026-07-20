@@ -103,11 +103,7 @@ class CortexRuntime:
         related: bool = False,
     ) -> RetrievalServiceResponse:
         retrieval = self._context_retrieval()
-        method = (
-            retrieval.get_related_work
-            if related
-            else retrieval.retrieve_context
-        )
+        method = retrieval.get_related_work if related else retrieval.retrieve_context
         return await method(
             workspace_id=authority.workspace_id,
             query=query,
@@ -150,9 +146,7 @@ class CortexRuntime:
         self, retrieval_request_id: str
     ) -> RetrievalRequest:
         """Read through the declared adapter contract, including async stores."""
-        result = self._context_retrieval().read_retrieval_request(
-            retrieval_request_id
-        )
+        result = self._context_retrieval().read_retrieval_request(retrieval_request_id)
         if isawaitable(result):
             result = await result
         return result

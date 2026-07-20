@@ -231,9 +231,7 @@ def create_kafka_pipeline_consumer(
     resolved_vector_index = vector_index
     if resolved_vector_index is None:
         if not settings.qdrant_url:
-            raise ValueError(
-                "QDRANT_URL is required for the durable indexing pipeline"
-            )
+            raise ValueError("QDRANT_URL is required for the durable indexing pipeline")
         resolved_vector_index = QdrantVectorIndex.from_settings(settings)
     event_bus = KafkaEventBus(bootstrap_servers=resolved.bootstrap_servers)
     dispatcher = SqlPipelineDispatcher(

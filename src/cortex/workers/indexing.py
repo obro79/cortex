@@ -193,9 +193,7 @@ class IndexWorker:
             payload["source_type"] = source_type
         return payload
 
-    async def _record_failure(
-        self, job: IndexJob, error: Exception
-    ) -> IndexJob | None:
+    async def _record_failure(self, job: IndexJob, error: Exception) -> IndexJob | None:
         error_code = self._error_code(error)
         error_message = type(error).__name__
         if self._is_terminal(error):
@@ -224,7 +222,9 @@ class IndexWorker:
                     job.id,
                     error_code,
                     error_message,
-                    next_retry_at=self.retry_policy.retry_at(attempt_count=attempt_count),
+                    next_retry_at=self.retry_policy.retry_at(
+                        attempt_count=attempt_count
+                    ),
                 )
             ),
         )

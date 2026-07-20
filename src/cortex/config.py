@@ -221,8 +221,7 @@ class Settings(BaseSettings):
         if (
             self.qdrant_url
             and (
-                not _is_local_qdrant_url(self.qdrant_url)
-                or self.qdrant_api_key.strip()
+                not _is_local_qdrant_url(self.qdrant_url) or self.qdrant_api_key.strip()
             )
             and urlparse(self.qdrant_url).scheme != "https"
         ):
