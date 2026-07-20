@@ -143,6 +143,18 @@ class InMemoryProviderAclRepository:
             now=now,
         )
 
+    @classmethod
+    def from_snapshots(
+        cls, snapshots: list[ProviderAclSnapshot]
+    ) -> InMemoryProviderAclRepository:
+        """Create a read-only-in-practice authorization snapshot from SQL rows."""
+        repository = cls()
+        repository._snapshots = {
+            _snapshot_key(snapshot.workspace_id, snapshot.resource): snapshot
+            for snapshot in snapshots
+        }
+        return repository
+
 
 class SqlAlchemyProviderAclRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -238,33 +250,39 @@ class SqlAlchemyProviderAclRepository:
                 ProviderAclEntryRecord.snapshot_id == record.id
             )
         )
-        entries = [
-            ProviderAclEntry(
-                principal=ProviderAclPrincipal(
-                    provider=entry.provider,
-                    principal_type=entry.principal_type,
-                    external_id_hash=entry.principal_id_hash,
-                ),
-                permission=entry.permission,
-                effect=entry.effect,
-            )
-            for entry in entries_result.scalars()
-        ]
-        return ProviderAclSnapshot(
-            id=record.id,
-            workspace_id=record.workspace_id,
-            resource=ProviderAclResourceRef(
-                provider=record.provider,
-                resource_type=record.resource_type,
-                external_id_hash=record.resource_id_hash,
-            ),
-            entries=tuple(entries),
-            snapshot_hash=record.snapshot_hash,
-            captured_at=record.captured_at,
-            expires_at=record.expires_at,
-            source_connection_id=record.source_connection_id,
-            metadata_json=dict(record.metadata_json),
+        return provider_acl_snapshot_from_records(
+            record, list(entries_result.scalars())
         )
+
+    async def list_current_snapshots(
+        self, workspace_id: str
+    ) -> list[ProviderAclSnapshot]:
+        """Load all current ACL resources for one durable retrieval snapshot."""
+        snapshots_result = await self.session.execute(
+            select(ProviderAclSnapshotRecord).where(
+                ProviderAclSnapshotRecord.workspace_id == workspace_id,
+                ProviderAclSnapshotRecord.is_current.is_(True),
+            )
+        )
+        records = list(snapshots_result.scalars())
+        if not records:
+            return []
+        entries_result = await self.session.execute(
+            select(ProviderAclEntryRecord).where(
+                ProviderAclEntryRecord.snapshot_id.in_(
+                    [record.id for record in records]
+                )
+            )
+        )
+        entries_by_snapshot: dict[str, list[ProviderAclEntryRecord]] = {}
+        for entry in entries_result.scalars():
+            entries_by_snapshot.setdefault(entry.snapshot_id, []).append(entry)
+        return [
+            provider_acl_snapshot_from_records(
+                record, entries_by_snapshot.get(record.id, [])
+            )
+            for record in records
+        ]
 
     async def authorize(
         self,
@@ -437,6 +455,38 @@ def provider_principal_mapping_from_record(
         status=record.status,
         last_verified_at=record.last_verified_at,
         expires_at=record.expires_at,
+        metadata_json=dict(record.metadata_json),
+    )
+
+
+def provider_acl_snapshot_from_records(
+    record: ProviderAclSnapshotRecord,
+    entry_records: list[ProviderAclEntryRecord],
+) -> ProviderAclSnapshot:
+    return ProviderAclSnapshot(
+        id=record.id,
+        workspace_id=record.workspace_id,
+        resource=ProviderAclResourceRef(
+            provider=record.provider,
+            resource_type=record.resource_type,
+            external_id_hash=record.resource_id_hash,
+        ),
+        entries=tuple(
+            ProviderAclEntry(
+                principal=ProviderAclPrincipal(
+                    provider=entry.provider,
+                    principal_type=entry.principal_type,
+                    external_id_hash=entry.principal_id_hash,
+                ),
+                permission=entry.permission,
+                effect=entry.effect,
+            )
+            for entry in entry_records
+        ),
+        snapshot_hash=record.snapshot_hash,
+        captured_at=record.captured_at,
+        expires_at=record.expires_at,
+        source_connection_id=record.source_connection_id,
         metadata_json=dict(record.metadata_json),
     )
 

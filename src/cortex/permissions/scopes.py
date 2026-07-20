@@ -272,12 +272,21 @@ class SqlAlchemyPermissionScopeRepository:
         The returned service intentionally has no database handle; callers must
         materialize a new snapshot for each authorization request/batch.
         """
+        from cortex.permissions.provider_acls import (
+            InMemoryProviderAclRepository,
+            SqlAlchemyProviderAclRepository,
+        )
         from cortex.permissions.service import PermissionService
 
         snapshot = InMemoryPermissionScopeRepository.from_active_scopes(
             await self.list_active(workspace_id)
         )
-        return PermissionService(snapshot)
+        acl_snapshot = InMemoryProviderAclRepository.from_snapshots(
+            await SqlAlchemyProviderAclRepository(self.session).list_current_snapshots(
+                workspace_id
+            )
+        )
+        return PermissionService(snapshot, provider_acls=acl_snapshot)
 
 
 class SqlAlchemyPermissionScopeService:
