@@ -219,6 +219,13 @@ class SourceAwareChunker:
         metadata_json: dict[str, object] | None = None,
     ) -> SourceChunk:
         now = datetime.now(UTC)
+        # The derived vector index may filter by provider and source type, so
+        # every chunk carries those canonical, compact identifiers.  These are
+        # taken from the source object rather than normalizer-supplied metadata
+        # to prevent a chunk from claiming a different provider.
+        metadata = dict(metadata_json or {"object_type": source_object.object_type})
+        metadata["provider"] = source_object.provider
+        metadata["source_type"] = source_object.object_type
         return SourceChunk(
             id=stable_chunk_id(
                 source_object.workspace_id,
@@ -242,7 +249,7 @@ class SourceAwareChunker:
             or source_object.title
             or source_object.external_object_id,
             citation_url=source_object.canonical_url,
-            metadata_json=metadata_json or {"object_type": source_object.object_type},
+            metadata_json=metadata,
             status=SourceChunkStatus.ACTIVE,
             created_from_hash=created_from_hash,
             created_at=now,
