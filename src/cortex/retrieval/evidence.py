@@ -24,6 +24,22 @@ class EvidencePackBuilder:
                 "citation_label": candidate.source_chunk.citation_label,
                 "citation_url": candidate.source_chunk.citation_url,
                 "snippet": self._snippet(candidate.source_chunk.text, token_budget),
+                "provider": self._provider_from_chunk(candidate.source_chunk),
+                "source_type": candidate.source_chunk.metadata_json.get(
+                    "object_type", candidate.source_chunk.chunk_type
+                ),
+                "source_updated_at": self._timestamp(
+                    candidate.source_chunk.metadata_json.get("source_updated_at")
+                ),
+                "last_synced_at": self._timestamp(
+                    candidate.source_chunk.metadata_json.get("last_synced_at")
+                ),
+                "retrieval_paths": sorted(candidate.paths),
+                "score_provenance": dict(sorted(candidate.score_provenance.items())),
+                "content_hash": candidate.source_chunk.text_hash,
+                "source_version": candidate.source_chunk.metadata_json.get(
+                    "source_version", candidate.source_chunk.created_from_hash
+                ),
             }
             for candidate in selected
         ]
@@ -100,6 +116,9 @@ class EvidencePackBuilder:
         metadata = getattr(chunk, "metadata_json", {})
         if not isinstance(metadata, dict):
             return None
+        provider = metadata.get("provider") or metadata.get("source_kind")
+        if isinstance(provider, str):
+            return provider
         object_type = metadata.get("object_type")
         if object_type == "slack_thread":
             return "slack"
@@ -110,3 +129,6 @@ class EvidencePackBuilder:
         if object_type == "repo_doc":
             return "repo_docs"
         return None
+
+    def _timestamp(self, value: object) -> str | None:
+        return value if isinstance(value, str) else None

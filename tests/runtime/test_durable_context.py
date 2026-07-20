@@ -1,5 +1,6 @@
 from typing import cast
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cortex.api.app import create_app
@@ -39,3 +40,15 @@ def test_sql_app_composes_durable_runtime_only_with_qdrant() -> None:
 
     assert isinstance(app.state.cortex_runtime, CortexRuntime)
     assert isinstance(app.state.cortex_runtime.retrieval, DurableContextRetrieval)
+
+
+def test_durable_retrieval_requires_a_permission_service_factory() -> None:
+    settings = Settings(cortex_env="test", qdrant_url="http://localhost:6333")
+    retrieval = DurableContextRetrieval(
+        session_factory=cast(async_sessionmaker[AsyncSession], object()),
+        settings=settings,
+        vector_index=cast(QdrantVectorIndex, object()),
+    )
+
+    with pytest.raises(RuntimeError, match="durable_permission_service_unavailable"):
+        retrieval._service(cast(AsyncSession, object()))

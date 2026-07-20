@@ -191,6 +191,12 @@ class RetrievalService:
             versions=versions,
         )
         payloads["candidate_summary_json"]["errors"] = errors
+        payloads["candidate_summary_json"]["lexical_candidate_count"] = len(
+            lexical_candidates
+        )
+        payloads["candidate_summary_json"]["vector_candidate_count"] = len(
+            vector_candidates
+        )
         evidence_pack = await maybe_await(
             self.evidence.create(
                 workspace_id=workspace_id,
