@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from cortex.chunking.config import load_retrieval_config
 from cortex.chunking.source_aware import SourceAwareChunker
 from cortex.contracts.entities import SourceObject
@@ -10,6 +12,7 @@ from cortex.permissions.provider_acls import (
     ProviderAclEntry,
     ProviderAclPrincipal,
     ProviderAclResourceRef,
+    ProviderAclSnapshotIntegrityError,
 )
 from cortex.permissions.scopes import InMemoryPermissionScopeRepository
 from cortex.permissions.service import PermissionService
@@ -167,3 +170,22 @@ def test_provider_acl_snapshot_fails_closed_when_missing() -> None:
 
     assert check.decision == "denied"
     assert check.reason == "provider_acl_missing_snapshot"
+
+
+def test_provider_acl_snapshot_materialization_rejects_duplicates() -> None:
+    repository = InMemoryProviderAclRepository()
+    snapshot = repository.replace_snapshot(
+        workspace_id="ws_1",
+        resource=ProviderAclResourceRef(
+            provider="slack",
+            resource_type="slack_channel",
+            external_id_hash=sha256_digest(b"C123"),
+        ),
+        entries=[],
+    )
+
+    with pytest.raises(
+        ProviderAclSnapshotIntegrityError,
+        match="duplicate_current_provider_acl_snapshot",
+    ):
+        InMemoryProviderAclRepository.from_snapshots([snapshot, snapshot])

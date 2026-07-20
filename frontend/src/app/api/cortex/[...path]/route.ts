@@ -10,6 +10,7 @@ const ALLOWED_ROUTES: RouteRule[] = [
   { method: "GET", path: /^health\/(live|ready)$/ },
   { method: "POST", path: /^v1\/context\/task-context$/ },
   { method: "GET", path: /^v1\/context\/evidence\/[A-Za-z0-9_-]+$/ },
+  { method: "GET", path: /^v1\/demo-runs\/(latest|source-health)$/ },
   { method: "GET", path: /^dev\/state$/ },
   { method: "GET", path: /^dev\/pipeline\/runs\/[A-Za-z0-9_-]+$/ },
   { method: "GET", path: /^dev\/evidence-packs\/[A-Za-z0-9_-]+$/ },

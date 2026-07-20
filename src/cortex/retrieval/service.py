@@ -6,7 +6,10 @@ from typing import Any
 from cortex.canonical_memory.repositories import InMemoryCanonicalDecisionRepository
 from cortex.canonical_memory.retrieval_priority import CanonicalDecisionCandidateAdapter
 from cortex.chunking.config import RetrievalConfig
-from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
+from cortex.embeddings.deterministic import (
+    DeterministicEmbeddingProvider,
+    EmbeddingProvider,
+)
 from cortex.interfaces.vector_index import VectorIndex
 from cortex.normalization.repositories import InMemoryRelationshipSeedRepository
 from cortex.permissions.provider_acls import ProviderAclPrincipal
@@ -49,7 +52,7 @@ class RetrievalService:
         relationship_seeds: InMemoryRelationshipSeedRepository | None = None,
         permission_service: PermissionService | None = None,
         vector_collection: str = "fixture-cortex-dev",
-        query_embedder: DeterministicEmbeddingProvider | None = None,
+        query_embedder: EmbeddingProvider | None = None,
     ) -> None:
         self.config = config
         self.source_chunks = source_chunks

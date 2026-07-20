@@ -21,11 +21,18 @@ from cortex.permissions.provider_acls import (
     SqlAlchemyProviderAclRepository,
     SqlAlchemyProviderPrincipalMappingRepository,
 )
-from cortex.permissions.scopes import InMemoryPermissionScopeRepository
+from cortex.permissions.scopes import (
+    InMemoryPermissionScopeRepository,
+    PermissionScopeRepository,
+    SqlAlchemyPermissionScopeRepository,
+    SqlAlchemyPermissionScopeService,
+    load_permission_service_snapshot,
+)
 from cortex.permissions.service import PermissionService
 
 __all__ = [
     "InMemoryPermissionScopeRepository",
+    "PermissionScopeRepository",
     "InMemoryProviderAclRepository",
     "InMemoryProviderPrincipalMappingRepository",
     "PermissionService",
@@ -44,4 +51,7 @@ __all__ = [
     "ProviderPrincipalMappingInput",
     "SqlAlchemyProviderAclRepository",
     "SqlAlchemyProviderPrincipalMappingRepository",
+    "SqlAlchemyPermissionScopeRepository",
+    "SqlAlchemyPermissionScopeService",
+    "load_permission_service_snapshot",
 ]

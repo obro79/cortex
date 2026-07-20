@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -10,7 +10,7 @@ from cortex.chunking.config import RetrievalConfig, load_retrieval_config
 from cortex.chunking.repositories import SqlAlchemySourceChunkRepository
 from cortex.config import Settings
 from cortex.contracts.entities import EvidencePack, RetrievalRequest
-from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
+from cortex.embeddings.profile import EmbeddingIndexProfile
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.indexing.qdrant import QdrantVectorIndex
 from cortex.permissions import ProviderAclPrincipal
@@ -21,6 +21,11 @@ from cortex.retrieval.repositories import (
     SqlAlchemyRetrievalRequestRepository,
 )
 from cortex.retrieval.service import RetrievalService, RetrievalServiceResponse
+from cortex.utils.asyncio import maybe_await
+
+PermissionServiceFactory = Callable[
+    [AsyncSession, str], PermissionService | Awaitable[PermissionService]
+]
 
 
 class DurableContextRetrieval:
@@ -38,45 +43,32 @@ class DurableContextRetrieval:
         settings: Settings,
         config: RetrievalConfig | None = None,
         vector_index: QdrantVectorIndex | None = None,
-        permission_service_factory: Callable[[AsyncSession], PermissionService]
-        | None = None,
+        permission_service_factory: PermissionServiceFactory | None = None,
     ) -> None:
         if not settings.qdrant_url:
             raise ValueError("QDRANT_URL is required for durable context retrieval")
         self.session_factory = session_factory
         self.settings = settings
         self.config = config or load_retrieval_config()
+        self.embedding_profile = EmbeddingIndexProfile.from_settings(
+            settings, config=self.config
+        )
         self.vector_index = vector_index or QdrantVectorIndex.from_settings(settings)
         # SQL scopes and provider ACL snapshots must be injected by the
         # composition root.  Until their durable repositories are available,
         # task retrieval fails closed instead of treating all canonical chunks
         # as readable.
         self.permission_service_factory = permission_service_factory
-        self.vector_collection = settings.qdrant_collection_name(
-            embedding_model=self._embedding_model,
-            embedding_version=self.config.embeddings.version,
-            dimensions=self._embedding_dimensions,
-        )
+        self.vector_collection = self.embedding_profile.collection
 
-    @property
-    def _embedding_model(self) -> str:
-        return (
-            self.config.embeddings.prod_model
-            if self.settings.cortex_embedding_mode == "real"
-            else self.config.embeddings.dev_provider
-        )
-
-    @property
-    def _embedding_dimensions(self) -> int:
-        return (
-            self.config.embeddings.prod_dimensions
-            if self.settings.cortex_embedding_mode == "real"
-            else 16
-        )
-
-    def _service(self, session: AsyncSession) -> RetrievalService:
+    async def _service(
+        self, session: AsyncSession, *, workspace_id: str
+    ) -> RetrievalService:
         if self.permission_service_factory is None:
             raise RuntimeError("durable_permission_service_unavailable")
+        permission_service = await maybe_await(
+            self.permission_service_factory(session, workspace_id)
+        )
         return RetrievalService(
             config=self.config,
             source_chunks=SqlAlchemySourceChunkRepository(session),
@@ -86,11 +78,8 @@ class DurableContextRetrieval:
             # Retrieval persistence must not depend on a best-effort event bus.
             publisher=EvidencePackPublisher(InMemoryEventBus()),
             vector_collection=self.vector_collection,
-            query_embedder=DeterministicEmbeddingProvider(
-                dimensions=self._embedding_dimensions,
-                version=self.config.embeddings.version,
-            ),
-            permission_service=self.permission_service_factory(session),
+            query_embedder=self.embedding_profile.query_embedder(),
+            permission_service=permission_service,
         )
 
     async def retrieve_context(
@@ -104,7 +93,8 @@ class DurableContextRetrieval:
     ) -> RetrievalServiceResponse:
         async with self.session_factory() as session:
             try:
-                result = await self._service(session).retrieve_context(
+                service = await self._service(session, workspace_id=workspace_id)
+                result = await service.retrieve_context(
                     workspace_id=workspace_id,
                     query=query,
                     source_allowlist=source_allowlist,
