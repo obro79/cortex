@@ -4,7 +4,7 @@
 
 **0:08–0:16** — A release decision is scattered across messages, tickets, code, and documentation.
 
-**0:16–0:24** — For COR-123, Cortex starts with six local fixture records shaped like Slack, Linear, GitHub, and repo documentation.
+**0:16–0:24** — For COR-123, Cortex starts with ten local fixture records shaped like Slack, Drive, Linear, GitHub, Jira, and repository documentation.
 
 **0:24–0:32** — It follows one trace from seed and ingestion through normalization, retrieval, and the context gate.
 

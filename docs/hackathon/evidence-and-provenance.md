@@ -35,7 +35,7 @@ ranked answer has been externally verified.
 ## What a judge can reproduce
 
 1. Inspect the fixed counts in `assets/hackathon/scoreboard.svg`.
-2. Run `python scripts/hackathon_evidence_report.py` to check the packet’s
+2. Run `uv run python scripts/hackathon_evidence_report.py` to check the packet’s
    declared counts and mandatory disclosure language.
 3. Follow the scripted search and evidence reveal in the run of show.
 

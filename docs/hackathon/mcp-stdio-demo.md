@@ -3,7 +3,7 @@
 Run the deterministic local demo with:
 
 ```bash
-python scripts/mcp_protocol_smoke.py
+uv run python scripts/mcp_protocol_smoke.py
 ```
 
 The script starts `cortex.mcp.server` as a subprocess and sends newline-delimited

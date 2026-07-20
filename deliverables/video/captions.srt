@@ -12,7 +12,7 @@ Slack-shaped records · Linear-shaped records · GitHub-shaped records · repo d
 3
 00:00:16,000 --> 00:00:24,000
 ONE LOCAL COR-123 BUNDLE
-6 deterministic fixtures · fixed inputs · reproducible output
+10 deterministic source records · fixed inputs · reproducible output
 
 4
 00:00:24,000 --> 00:00:32,000

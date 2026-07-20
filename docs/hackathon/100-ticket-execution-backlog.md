@@ -1,6 +1,10 @@
 # Cortex: Built, Reusable, and 100-Ticket Execution Backlog
 
-**Status:** Planning baseline, not yet entered into an issue tracker
+**Status:** Historical planning baseline, not yet entered into an issue tracker.
+The accepted current direction is the [durable retrieval and local control-plane
+plan](../specs/2026-07-19-durable-retrieval-local-control-plane.md). This
+backlog is a retained planning artifact, not a delivery-status or production
+deployment claim.
 **Repository:** recovered isolated Cortex snapshot; the original desktop worktree remains untouched
 **Architecture:** Full durable target retained: Postgres + object storage + Kafka + Postgres FTS + Qdrant + MCP proxy
 **Important:** Existing frontend changes are user work. The local control-plane UI is now in planning scope, but implementation starts only after its owner creates a safe checkpoint/review boundary.
