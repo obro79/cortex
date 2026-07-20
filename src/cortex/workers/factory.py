@@ -22,8 +22,12 @@ from cortex.embeddings.repositories import SqlAlchemyEmbeddingRecordRepository
 from cortex.embeddings.service import EmbeddingService
 from cortex.events.bus import PIPELINE_TOPICS, KafkaEventBus
 from cortex.events.in_memory import InMemoryEventBus
+from cortex.indexing.publishers import IndexPublisher
+from cortex.indexing.repositories import SqlAlchemyIndexJobRepository
+from cortex.indexing.service import IndexJobService
 from cortex.ingestion.payloads import FilePayloadStore
 from cortex.ingestion.raw_events import SqlAlchemyRawEventRepository
+from cortex.interfaces.vector_index import VectorIndex
 from cortex.normalization.publishers import SourceFilePublisher, SourceObjectPublisher
 from cortex.normalization.repositories import (
     SqlAlchemyRelationshipSeedRepository,
@@ -34,6 +38,7 @@ from cortex.normalization.service import SourceNormalizationService
 from cortex.platform import build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
+from cortex.workers.indexing import IndexWorker
 from cortex.workers.kafka import KafkaPipelineConsumer, RetryablePipelineError
 
 
@@ -53,11 +58,13 @@ class SqlPipelineDispatcher:
         payload_store: FilePayloadStore,
         event_bus: KafkaEventBus,
         settings: Settings,
+        vector_index: VectorIndex | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.payload_store = payload_store
         self.event_bus = event_bus
         self.settings = settings
+        self.vector_index = vector_index
         self.retrieval_config = load_retrieval_config()
         self.cache = (
             build_ephemeral_cache(settings)
@@ -117,10 +124,11 @@ class SqlPipelineDispatcher:
             chunker=SourceAwareChunker(self.retrieval_config.chunking),
             publisher=SourceChunkPublisher(event_bus),
         )
+        embedding_provider = self._embedding_provider()
         embedding_service = EmbeddingService(
             source_chunks=source_chunks,
             embeddings=SqlAlchemyEmbeddingRecordRepository(session),
-            provider=self._embedding_provider(),
+            provider=embedding_provider,
             publisher=EmbeddingPublisher(event_bus),
             model_rate_limiter=(
                 RateLimitService(self.cache)
@@ -142,6 +150,15 @@ class SqlPipelineDispatcher:
             ),
         )
         embeddings = EmbeddingWorkerSkeleton(embedding_service)
+        indexing = IndexWorker(
+            index_service=IndexJobService(
+                SqlAlchemyIndexJobRepository(session), IndexPublisher(event_bus)
+            ),
+            embeddings=SqlAlchemyEmbeddingRecordRepository(session),
+            source_chunks=source_chunks,
+            embedding_provider=embedding_provider,
+            vector_index=self.vector_index,
+        )
         if envelope.event_type == "raw_event.persisted":
             return await normalization.handle_raw_event_persisted(envelope)
         elif envelope.event_type == "source_object.upserted":
@@ -152,6 +169,10 @@ class SqlPipelineDispatcher:
             return await embeddings.handle_source_chunk_upserted(envelope)
         elif envelope.event_type == "embedding.requested":
             return await embeddings.handle_embedding_requested(envelope)
+        elif envelope.event_type == "embedding.completed":
+            return await indexing.handle_embedding_completed(envelope)
+        elif envelope.event_type == "index.requested":
+            return await indexing.handle_index_requested(envelope)
         return None
 
     def _embedding_provider(self) -> EmbeddingProvider:
@@ -203,6 +224,7 @@ def create_kafka_pipeline_consumer(
     *,
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
+    vector_index: VectorIndex | None = None,
 ) -> KafkaPipelineConsumer:
     resolved = durable_pipeline_settings(settings)
     event_bus = KafkaEventBus(bootstrap_servers=resolved.bootstrap_servers)
@@ -211,6 +233,7 @@ def create_kafka_pipeline_consumer(
         payload_store=FilePayloadStore(resolved.payload_store_path),
         event_bus=event_bus,
         settings=settings,
+        vector_index=vector_index,
     )
     return KafkaPipelineConsumer(
         bootstrap_servers=resolved.bootstrap_servers,

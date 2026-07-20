@@ -6,6 +6,7 @@ from cortex.chunking.service import ChunkingService
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.normalization.service import SourceNormalizationService
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
+from cortex.workers.indexing import IndexWorker
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class PipelineDrainResult:
     normalization_count: int = 0
     chunking_count: int = 0
     embedding_count: int = 0
+    indexing_count: int = 0
 
 
 class InMemoryPipelineDispatcher:
@@ -23,16 +25,19 @@ class InMemoryPipelineDispatcher:
         normalization: SourceNormalizationService,
         chunking: ChunkingService,
         embeddings: EmbeddingWorkerSkeleton,
+        indexing: IndexWorker | None = None,
     ) -> None:
         self.normalization = normalization
         self.chunking = chunking
         self.embeddings = embeddings
+        self.indexing = indexing
         self._cursor = 0
 
     async def drain(self, event_bus: InMemoryEventBus) -> PipelineDrainResult:
         normalization_count = 0
         chunking_count = 0
         embedding_count = 0
+        indexing_count = 0
         processed_event_count = 0
 
         while self._cursor < len(event_bus.events):
@@ -70,10 +75,19 @@ class InMemoryPipelineDispatcher:
                 )
                 if embedding_result["status"] == "completed":
                     embedding_count += 1
+            elif envelope.event_type == "embedding.completed" and self.indexing:
+                index_result = await self.indexing.handle_embedding_completed(envelope)
+                if index_result["status"] == "queued":
+                    indexing_count += 1
+            elif envelope.event_type == "index.requested" and self.indexing:
+                index_result = await self.indexing.handle_index_requested(envelope)
+                if index_result["status"] == "completed":
+                    indexing_count += 1
 
         return PipelineDrainResult(
             processed_event_count=processed_event_count,
             normalization_count=normalization_count,
             chunking_count=chunking_count,
             embedding_count=embedding_count,
+            indexing_count=indexing_count,
         )

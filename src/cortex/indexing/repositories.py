@@ -101,6 +101,18 @@ class InMemoryIndexJobRepository:
         self._records[index_job_id] = updated
         return updated
 
+    def mark_processing(self, index_job_id: str) -> IndexJob:
+        current = self.get_by_id(index_job_id)
+        updated = current.model_copy(
+            update={
+                "status": IndexJobStatus.PROCESSING,
+                "last_attempt_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        self._records[index_job_id] = updated
+        return updated
+
     def mark_failed_retryable(
         self, index_job_id: str, error_code: str, error_message: str
     ) -> IndexJob:
@@ -231,6 +243,17 @@ class SqlAlchemyIndexJobRepository:
         now = datetime.now(UTC)
         record.status = IndexJobStatus.COMPLETED.value
         record.completed_at = now
+        record.updated_at = now
+        await self.session.flush()
+        return index_job_from_record(record)
+
+    async def mark_processing(self, index_job_id: str) -> IndexJob:
+        record = await self.session.get(IndexJobRecord, index_job_id)
+        if record is None:
+            raise KeyError(index_job_id)
+        now = datetime.now(UTC)
+        record.status = IndexJobStatus.PROCESSING.value
+        record.last_attempt_at = now
         record.updated_at = now
         await self.session.flush()
         return index_job_from_record(record)
