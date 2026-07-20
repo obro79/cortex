@@ -9,14 +9,16 @@ def test_evidence_pack_contains_claims_citations_conflicts_and_coverage() -> Non
     assert evidence is not None
 
     assert evidence["claims"]
-    assert len(evidence["citations"]) == 6
+    assert len(evidence["citations"]) == 10
     assert evidence["source_coverage"] == {
-        "slack": True,
-        "diagram_ocr": True,
-        "linear": True,
         "github": True,
+        "google_drive": True,
+        "jira": True,
+        "linear": True,
         "repo_docs": True,
+        "slack": True,
     }
+    assert evidence["media_coverage"] == {"caption": True, "video_transcript": True}
     assert evidence["stale_evidence"] == ["repo-doc-session-storage"]
     assert evidence["conflicting_evidence"]
     assert evidence["permission_exclusions"] == []

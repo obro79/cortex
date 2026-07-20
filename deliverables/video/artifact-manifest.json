@@ -1,0 +1,11 @@
+{
+  "artifact": "cortex-hackathon-fixture-teaser.mp4",
+  "classification": "deterministic-fixture-demo",
+  "duration_seconds": 72,
+  "video": "h264 1280x720",
+  "audio": "none",
+  "live_providers": false,
+  "session_accessed": false,
+  "native_claude_session_resume_or_fork": false,
+  "sha256": "d194ee80d89f9fdd8f8ad7971d83f3cd909a2ead8adb3928d3f6e551e88e9980"
+}

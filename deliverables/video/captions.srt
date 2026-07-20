@@ -1,0 +1,45 @@
+1
+00:00:00,000 --> 00:00:08,000
+CORTEX
+DETERMINISTIC FIXTURE DEMO
+No live providers or customer data
+
+2
+00:00:08,000 --> 00:00:16,000
+RELEASE CONTEXT IS SCATTERED
+Slack-shaped records · Linear-shaped records · GitHub-shaped records · repo docs
+
+3
+00:00:16,000 --> 00:00:24,000
+ONE LOCAL COR-123 BUNDLE
+6 deterministic fixtures · fixed inputs · reproducible output
+
+4
+00:00:24,000 --> 00:00:32,000
+TRACE THE WORKFLOW
+seed → ingest → normalize → chunk/OCR → embed → index → link → retrieve → gate
+
+5
+00:00:32,000 --> 00:00:40,000
+EVIDENCE, NOT A BLACK BOX
+citations · source coverage · stale evidence · conflicting evidence
+
+6
+00:00:40,000 --> 00:00:48,000
+CONFLICT MADE EXPLICIT
+stale Redis documentation conflicts with newer Postgres decisions
+
+7
+00:00:48,000 --> 00:00:56,000
+CONTEXT GATE: BLOCK
+Confirm Redis fallback · update stale docs · explicitly accept rollout risk
+
+8
+00:00:56,000 --> 00:01:04,000
+OPT-IN PORTABLE HANDOFF BUNDLE
+session_accessed: false · no native Claude session resume or fork
+
+9
+00:01:04,000 --> 00:01:12,000
+REPRODUCIBLE DECISION TRAIL
+Fixture result shown · live integrations are not shown

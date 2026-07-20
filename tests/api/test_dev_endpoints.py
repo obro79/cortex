@@ -13,7 +13,7 @@ def test_fixture_seed_reset_endpoints() -> None:
     seed = client.post("/dev/fixtures/seed")
     assert seed.status_code == 200
     assert "linear-issue-COR-123" in seed.json()["fixture_ids"]
-    assert seed.json()["counts"]["source_objects"] == 6
+    assert seed.json()["counts"]["source_objects"] == 10
 
     seed_again = client.post("/dev/fixtures/seed")
     assert seed_again.json()["counts"] == seed.json()["counts"]
