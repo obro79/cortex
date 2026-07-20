@@ -46,3 +46,4 @@ Current top-level ADRs:
 - [ADR-022: Apache Kafka Runtime](022-apache-kafka-runtime/)
 - [ADR-023: Cortex Evidence Pack Public Artifact](023-cortex-evidence-pack-public-artifact/)
 - [ADR-024: Local, Linear-Inspired Cortex Control Plane](024-local-control-plane-ui/)
+- [ADR-025: Live Context Proof Before Source Breadth or UI Polish](025-live-context-proof-slice/)
