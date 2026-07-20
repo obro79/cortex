@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from cortex.api.app import create_app
 from cortex.auth.dependencies import AUTH_EMAIL_HEADER
 from cortex.config import Settings
-from cortex.demo_runs import FixtureDemoRunReportReader
+from cortex.demo_runs import FixtureDemoRunReportReader, SqlAlchemyDemoRunReportStore
 from cortex.ui.auth import WORKSPACE_ID_HEADER
 
 
@@ -75,3 +75,15 @@ def test_local_workbench_registers_fixture_source_health() -> None:
     assert response.status_code == 200
     assert response.json()["available"] is True
     assert {source["mode"] for source in response.json()["sources"]} == {"fixture"}
+
+
+def test_sql_state_registers_durable_report_store_without_connecting() -> None:
+    app = create_app(
+        Settings(
+            cortex_state_backend="sql",
+            database_url="postgresql+asyncpg://user:pass@localhost/cortex",
+        )
+    )
+
+    assert isinstance(app.state.demo_run_report_store, SqlAlchemyDemoRunReportStore)
+    assert app.state.demo_run_report_reader is app.state.demo_run_report_store

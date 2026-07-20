@@ -8,10 +8,21 @@ from .contracts import (
     SourceHealth,
     SourceHealthStatus,
 )
-from .service import DemoRunReportReader, FixtureDemoRunReportReader, SourceHealthReader
+from .repositories import (
+    DemoRunReportProjectionError,
+    SqlAlchemyDemoRunReportRepository,
+    stable_demo_run_report_id,
+)
+from .service import (
+    DemoRunReportReader,
+    FixtureDemoRunReportReader,
+    SourceHealthReader,
+    SqlAlchemyDemoRunReportStore,
+)
 
 __all__ = [
     "DemoRunReport",
+    "DemoRunReportProjectionError",
     "DemoRunReportReader",
     "DemoRunReportStatus",
     "FixtureDemoRunReportReader",
@@ -20,4 +31,7 @@ __all__ = [
     "SourceHealth",
     "SourceHealthReader",
     "SourceHealthStatus",
+    "SqlAlchemyDemoRunReportRepository",
+    "SqlAlchemyDemoRunReportStore",
+    "stable_demo_run_report_id",
 ]

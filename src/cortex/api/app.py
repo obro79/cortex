@@ -35,7 +35,7 @@ from cortex.connectors.linear.service import LinearConnectorServices
 from cortex.connectors.repo_docs.service import RepoDocsConnectorServices
 from cortex.connectors.slack.service import create_slack_connector_services
 from cortex.db.session import create_sessionmaker
-from cortex.demo_runs import FixtureDemoRunReportReader
+from cortex.demo_runs import FixtureDemoRunReportReader, SqlAlchemyDemoRunReportStore
 from cortex.dev.workbench import DevWorkbenchService
 from cortex.events.bus import EventBus, KafkaEventBus
 from cortex.ingestion.durable import SessionRawEventIngestionService
@@ -77,6 +77,12 @@ def create_app(
         else None
     )
     app.state.session_factory = session_factory
+    if session_factory is not None:
+        # This exposes a read-only, durable projection to the API. The same
+        # object has an internal write seam for a future trusted finalizer;
+        # no HTTP or MCP route can write reports.
+        app.state.demo_run_report_store = SqlAlchemyDemoRunReportStore(session_factory)
+        app.state.demo_run_report_reader = app.state.demo_run_report_store
     if cortex_runtime is None and session_factory is not None and resolved.qdrant_url:
         # SQL is canonical and Qdrant only supplies derived vector candidates.
         # Permissions are materialized per request into an isolated snapshot;

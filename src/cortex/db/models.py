@@ -555,6 +555,56 @@ class IndexJobRecord(Base):
     )
 
 
+class DemoRunReportRecord(Base):
+    """Immutable, redacted proof projection for a controlled live run.
+
+    The canonical ingestion/retrieval tables intentionally retain operational
+    material that must never be serialized into a demo surface. This table is
+    the small durable boundary between a trusted run finalizer and the
+    read-only control plane: it stores internal source linkage plus a
+    pre-validated public report, never source content, provider identifiers,
+    query text, evidence JSON, or credentials.
+    """
+
+    __tablename__ = "demo_run_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "run_id_hash",
+            name="uq_demo_run_reports_workspace_run",
+        ),
+        Index(
+            "ix_demo_run_reports_workspace_completed",
+            "workspace_id",
+            "completed_at",
+        ),
+        Index(
+            "ix_demo_run_reports_workspace_source_completed",
+            "workspace_id",
+            "source_connection_id",
+            "completed_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # This is Cortex's internal source-connection ID, not a provider resource
+    # identifier. The public projection exposes only source_ref_hash.
+    source_connection_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_id_hash: Mapped[str] = mapped_column(String(71), nullable=False)
+    source_ref_hash: Mapped[str] = mapped_column(String(71), nullable=False)
+    collection: Mapped[str] = mapped_column(String(160), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(64), nullable=False)
+    report_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class RetrievalRequestRecord(Base):
     __tablename__ = "retrieval_requests"
     __table_args__ = (

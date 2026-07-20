@@ -197,6 +197,23 @@ DemoRunReport
 **Acceptance:** judges can see exact "ingested/indexed/queried" evidence with
 an explicit mode label, and one evidence card deep-links to its cited record.
 
+#### Implementation boundary — 2026-07-20
+
+The credential-free slice now contains a durable, immutable
+`demo_run_reports` SQL projection and a read-only workspace-scoped reader. It
+stores only a validated `live-context-run-report/v1` JSON snapshot plus opaque
+hashes, aggregate metadata, and Cortex's internal source-connection ID. It
+does not expose a browser/MCP write route, call a provider/Qdrant while reading,
+or fall back to a previous report if the newest snapshot is malformed.
+
+That is intentionally **not yet an automatic exact-count ledger**. Current
+canonical rows do not all carry a common controlled-run identity, so deriving a
+report from workspace-wide counts would be misleading. The follow-up finalizer
+must create one durable run ID, record idempotent membership across raw event →
+object → chunk → embedding → verified vector → retrieval/evidence, and only
+then write this projection. Hosted Slack/Qdrant credentials are required for
+that acceptance run, not for the projection or its tests.
+
 ### LCP-06 — GitHub second-source and packaged proof (days 6–9)
 
 Only start after LCP-01 through LCP-05 are green.

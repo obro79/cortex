@@ -1,9 +1,9 @@
 """Authenticated, redacted demo-run control-plane reads.
 
-The application deliberately does not register this router yet.  An
-integrator must both include it and install a ``demo_run_report_reader`` on
-``app.state``.  That makes unavailable data explicit instead of falling back
-to made-up live operational counts.
+The application registers this router in every profile. A durable reader is
+installed only for SQL state; fixture mode substitutes a fixture-health reader
+that never fabricates a ``live_data: true`` report. Any missing or invalid
+projection is reported explicitly as unavailable.
 """
 
 from __future__ import annotations
