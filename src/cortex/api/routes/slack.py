@@ -202,6 +202,29 @@ async def slack_events(
     return payload
 
 
+@router.delete("/sources/{source_connection_id}")
+async def deselect_source(
+    request: Request,
+    source_connection_id: str,
+    workspace_id: str,
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
+) -> dict[str, object]:
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.SOURCE_SELECT,
+    )
+    try:
+        return await get_slack_services(request).sources.deselect_channel(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="source not found") from error
+
+
 @router.post("/backfill/{source_connection_id}")
 async def backfill_source(
     request: Request,

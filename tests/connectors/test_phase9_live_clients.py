@@ -163,6 +163,10 @@ async def test_github_live_backfill_persists_fetched_events() -> None:
         installation_token="gh_installation_token",
         client=FakeGitHubClient(),
     )
+    services.select_repos(
+        workspace_id="ws_1",
+        repos=[{"id": "44", "source_connection_id": "src_github"}],
+    )
 
     result = await services.live_backfill(
         workspace_id="ws_1",
@@ -173,3 +177,13 @@ async def test_github_live_backfill_persists_fetched_events() -> None:
 
     assert result["fetched"] == 1
     assert result["raw_events_created"] == 1
+    assert result["provenance"] == "live"
+    assert services.health("ws_1")["sync_sources"] == [
+        {
+            "source_connection_id": "src_github",
+            "status": "completed",
+            "cursor": "pull_request:1",
+            "last_error": None,
+            "provenance": "live",
+        }
+    ]

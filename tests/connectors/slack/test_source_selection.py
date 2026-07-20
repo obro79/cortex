@@ -93,3 +93,17 @@ async def test_list_channels_uses_installation_token_and_redacts_selection() -> 
             "is_member": True,
         }
     ]
+
+
+async def test_deselect_channel_disables_source_and_prevents_selected_lookup() -> None:
+    services, _install, selected = await installed_selected_services()
+    source_id = selected["source_connections"][0]["id"]
+
+    result = await services.sources.deselect_channel(
+        workspace_id="ws_1", source_connection_id=source_id
+    )
+
+    assert result["status"] == "disabled"
+    assert result["source_connection"]["selected"] is False
+    assert result["source_connection"]["status"] == SourceConnectionStatus.DISABLED
+    assert services.source_connections.get_selected_channel("ws_1", "C123") is None
