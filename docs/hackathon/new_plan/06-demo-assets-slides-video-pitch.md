@@ -6,7 +6,10 @@
 
 ## Deliverable and narrative guardrails
 
-Package a coherent story: Developer A creates a safe Claude Code checkpoint; imported snapshots establish `COR-123`; a synthetic Slack message is delivered live; Developer B uses Cortex in Claude Code before editing; `/ui/demo` visibly receives fresh Slack evidence.
+Package a coherent story: Developer A creates a safe Claude Code checkpoint;
+imported snapshots establish `COR-123`; a synthetic Slack message is delivered
+live; Developer B uses Cortex in Claude Code before editing; the Next.js Task
+Context view visibly receives fresh Slack evidence.
 
 Every evidence artifact shows its source mode:
 
@@ -94,9 +97,9 @@ Motion is 200–400 ms per element, no rapid flashing. Produce a reduced-motion 
 | --- | --- | --- | --- |
 | 0:00–0:20 | Play A01 intro. | Video narration. | Source-mode disclosure; no raw transcript. |
 | 0:20–0:35 | Slide 1. | Thesis and live/snapshot boundary. | Footer: Slack live; five snapshots. |
-| 0:35–0:45 | `/ui/demo`, consume six cards. | “These cards reveal evidence prepared before the run.” | Six badges; no syncing/OAuth claim; completes ~3s. |
+| 0:35–0:45 | `/sources`, reveal the six prepared cards. | “These cards reveal evidence prepared before the run.” | Six badges; no syncing/OAuth claim; completes ~3s. |
 | 0:45–1:05 | Real synthetic Slack channel and prepared message. | “This is the one live source.” | Synthetic channel only; no tokens/private context. |
-| 1:05–1:20 | Return to graph. | “That new Slack evidence is arriving now.” | Polling status then gold Live node/edge. |
+| 1:05–1:20 | Open `/tasks/COR-123`. | “That new Slack evidence is arriving now.” | Polling status then gold Live node/edge. |
 | 1:20–2:15 | Claude Code request/response. | “Use Cortex before changing anything.” | Prepared request; citations/freshness; no edit command. |
 | 2:15–2:35 | Open Slack, Claude, Drive/docs drawers. | “New, prior, and conflicting evidence are inspectable.” | Badges, timestamps, excerpts, evidence-pack action. |
 | 2:35–2:50 | Slide 3. | Architecture/proof explanation. | Correct source labels. |
@@ -158,4 +161,9 @@ We are not claiming a live connector suite: Slack is the only live source here. 
 
 ## Dependencies and risks
 
-Capture depends on final snapshot corpus, safe citation/evidence-pack data, `/ui/demo`, graph endpoint, and credentialed synthetic Slack acceptance run. The only substitute for unavailable live Slack is an explicitly labelled recovery capture. Exact middleware-file and focused-test names come from final incident fixture and must be copied verbatim into Claude capture—not invented by asset workstream.
+Capture depends on the final snapshot corpus, safe citation/evidence-pack data,
+the three Next.js product views, graph endpoint, and credentialed synthetic
+Slack acceptance run. The only substitute for unavailable live Slack is an
+explicitly labelled recovery capture. Exact middleware-file and focused-test
+names come from the final incident fixture and must be copied verbatim into the
+Claude capture—not invented by the asset workstream.

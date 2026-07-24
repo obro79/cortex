@@ -202,7 +202,10 @@ code.
 
 ## Presentation UI
 
-Add `/ui/demo` without replacing the existing diagnostic screens.
+Add a Next.js product in `apps/web` without replacing existing FastAPI
+diagnostic screens. The detailed package controls the frontend topology:
+`/dashboard`, `/sources`, and `/tasks/COR-123`, connected to FastAPI through an
+allowlisted same-origin BFF.
 
 ### Connector cards
 
@@ -334,7 +337,7 @@ instructions, and one-page pitch from the final verified run.
 | Hours 0–3 | Freeze the incident narrative, corpus, sample repo, seed manifest, and golden expected answer. |
 | Hours 3–8 | Implement the checkpoint route, hook exporter, thresholds, redaction, setup command, and focused tests. |
 | Hours 5–10 | Implement snapshot preparation, graph API, Slack-to-graph integration, and hosted-Qdrant preflight. |
-| Hours 8–14 | Implement `/ui/demo`, source cards, SVG graph, citation drawer, and live-node polling. |
+| Hours 8–14 | Implement the Next.js shell, Dashboard, Sources, Task Context, SVG graph, drawer, and live-node polling. |
 | Hours 12–18 | Rebuild the intro video, four-slide deck, pitch, screenshots, narration, and README. |
 | Hours 18–21 | Run the credentialed Slack/Qdrant acceptance test and Claude Code MCP rehearsal. |
 | Hours 21–24 | Fix demo-blocking defects, capture fallbacks, run two timed rehearsals, and freeze artifacts. |

@@ -217,10 +217,18 @@ as declared; none silently falls back to global fixtures.
 
 ## Follow-on workstreams
 
-### GIP-017 — Implement `/ui/demo`
+### GIP-017 — Implement the Next.js presentation product
 
-Build source cards, mode badges, graph polling, SVG graph, and citation drawer
-against the accepted graph contract.
+Create `apps/web` with Next.js App Router, React, TypeScript, Tailwind CSS, and
+Motion for React. Implement the shared shell plus `/dashboard`, `/sources`, and
+`/tasks/COR-123` from `04-presentation-frontend.md` and
+`09-ui-wireframes-and-interaction-spec.md`. Add the allowlisted same-origin BFF,
+contract fixtures, responsive states, reduced-motion behavior, and browser
+checks.
+
+**Acceptance:** a fresh runtime traverses Dashboard → Sources → COR-123, all
+counts reference one accepted report ID, source modes stay visible, and browser
+code never calls FastAPI or a provider directly.
 
 ### GIP-018 — Capture frontend proof
 
@@ -253,7 +261,7 @@ python scripts/prepare_cortex_demo.py --mode compose --format json
 Frontend and asset follow-ons add:
 
 ```bash
-cd frontend
+cd apps/web
 npm run lint
 npm run typecheck
 npm run build

@@ -1,138 +1,284 @@
-# Presentation Frontend Plan — `/ui/demo`
+# 04 — Next.js presentation frontend plan
 
-**Status:** Implementation-ready plan
+**Status:** Decision-complete architecture; implementation-ready after backend
+contract fixtures land
 **Owner:** Presentation frontend workstream
-**Scope:** A dedicated, truthful three-minute-demo surface; no changes to existing diagnostic screens.
+**Scope:** A polished three-view Cortex product shell for the hackathon demo
 
 ## Outcome and truth boundary
 
-Deliver `/ui/demo`, a polished incident presentation for `COR-123`. It makes the six already-indexed source contributions legible, then proves freshness by adding the sole live source (Slack) to a task-scoped graph.
+Build a frontend application in `apps/web` using Next.js App Router, React,
+TypeScript, Tailwind CSS, and Motion for React. FastAPI remains the system of
+record for ingestion, retrieval, graphs, evidence, and MCP behavior. Next.js
+owns presentation and acts as the browser-facing BFF.
 
-- Slack is the only live provider. Its card and graph node are labelled `Live`.
-- GitHub, Jira, Email, Drive/docs, and Claude Code are imported evidence and are labelled `Demo snapshot`.
-- Clicking `Consume` changes only local presentation state for evidence that the operator preparation step already indexed. It must never start OAuth, backfill, indexing, or an ingestion request, and the UI copy must say so.
-- The graph is a bounded task evidence projection, not a company knowledge graph. No global graph, ingestion ticker, general chat, or connector administration belongs in this route.
-- Browser responses and rendered content contain safe graph metadata and approved excerpts only—never provider tokens, raw provider payloads, transcripts, private source URLs, native session handles, or vector payloads.
+The product has three primary views:
 
-## Interface assumptions
+1. `/dashboard` — connector readiness and evidence-scale control room.
+2. `/sources` — source marketplace, source mode, and indexing proof.
+3. `/tasks/COR-123` — incident context, task graph, citations, and live Slack
+   arrival.
 
-The browser BFF exposes only the read-only graph contract:
+Truth rules are global:
 
-```text
-GET /v1/demo/tasks/COR-123/graph
+- Slack is the only live provider in the final acceptance run.
+- GitHub, Jira, Email, Drive/docs, and the initial Claude Code checkpoint are
+  visibly labelled `Demo snapshot`.
+- `Connect` and `Consume` reveal prepared demo evidence. They never claim to
+  perform OAuth or indexing.
+- Counts come from an accepted demo report or an explicitly labelled fixture
+  response; components never invent them.
+- Browser responses contain no provider tokens, raw payloads, transcripts,
+  private source URLs, native session handles, or vector payloads.
 
-TaskEvidenceGraph {
-  task_ref, generated_at,
-  nodes: [{
-    id, kind: "task" | "evidence", provider, label,
-    mode: "live" | "imported_snapshot" | "fixture",
-    freshness, source_updated_at, citation_id?
-  }],
-  edges: [{ id, source, target, relationship,
-            state: "supporting" | "conflicting" }]
-}
-```
-
-The frontend treats a graph response as authoritative for node mode, freshness, timestamps, and conflict state. Citation drawer details are fetched or resolved through the existing safe evidence-pack/citation interface keyed by `citation_id`; it does not construct provider URLs. The planned six source identifiers and expected labels are: `slack`, `github`, `jira`, `email`, `drive_docs`, and `claude_code`.
-
-The page needs a stable snapshot graph before live proof begins. If the API already includes Slack after a rehearsal, render it as an already-present `Live` node and skip the arrival animation, while retaining truthful badge and citation information.
-
-## Exact screen states
-
-### 1. Ready / source convergence
-
-At route entry, show:
-
-- A persistent title: `Cortex — Always-current context`.
-- A one-line disclosure: `Slack is live in this run. Other sources are pre-indexed demo snapshots.`
-- Six connector cards in this fixed reading order: Slack, GitHub, Jira, Email, Drive/docs, Claude Code.
-- Per-card provider icon plus visible textual provider name, a mode badge, a concise role line, and a `Consume` button.
-- The graph panel in its pre-live state, with `COR-123` at centre and snapshot evidence visible once consumed.
-
-Cards begin unconsumed. The Slack card reads `Live` but its Consume action remains presentation-only: it connects the already-known card to the incident and does not claim a Slack fetch. The graph has no Slack evidence node until the live endpoint returns one.
-
-| Card | Badge | Role copy |
-| --- | --- | --- |
-| Slack | Live | `Newest confirmation: Redis fallback invalidates sessions.` |
-| GitHub | Demo snapshot | `Rollout changed session reads to Postgres.` |
-| Jira | Demo snapshot | `COR-123 records severity, version, and owner.` |
-| Email | Demo snapshot | `Support escalation establishes customer impact.` |
-| Drive/docs | Demo snapshot | `Older rollout guidance still permits Redis fallback.` |
-| Claude Code | Demo snapshot | `Developer A checkpoint: suspected fallback path and next action.` |
-
-Below the cards, include non-actionable explanatory text: `Consume reveals evidence prepared before this presentation; it does not connect or ingest a provider.`
-
-### 2. Consuming snapshots
-
-Each click consumes exactly one card, disables its button, changes its label to `Connected to COR-123`, and exposes that source's fixed graph node/edge. The auto-demo control consumes cards in the listed order; it is optional and keyboard-accessible. The run completes in approximately three seconds (roughly 450 ms between starts, with short overlapping settle animations).
-
-The card transition is a 180–240 ms border/accent settle and a short line-draw toward the graph panel. Do not use spinner, network, OAuth, download, or “syncing” language. Graph nodes fade from 0 to 1 and supporting edges draw once; their final state remains still.
-
-### 3. Awaiting live proof
-
-After the snapshot sequence, show: `Waiting for the prepared Slack update…` and `Checking task evidence every second (up to 45 seconds).` Begin polling only in this live-window state. Poll once per second, preventing overlapping requests. Stop on the first response that includes evidence where provider is `slack` and mode is `live`, or after 45 seconds. Cancel the timer on unmount, route change, and successful arrival. Preserve the last safe graph on transient errors.
-
-At timeout show: `No live Slack update arrived in this window.` with the operator-only recovery cue: `Use the labelled prerecorded arrival capture or signed-webhook-simulator fallback.` Never silently insert a live node.
-
-### 4. Live node arrival
-
-On the response that first adds live Slack, announce: `Live Slack evidence arrived for COR-123.` Update status to `Fresh Slack confirmation received`. The Slack node and edge fade in over 300–400 ms, then pulse its gold/fresh outline once (about 700 ms) and settle. With reduced motion, render it immediately with no fade, movement, or pulse while retaining the textual announcement.
-
-### 5. Citation drawer
-
-Selecting a graph node opens a compact drawer without navigation. It contains, in order: provider and source label, `Live` or `Demo snapshot` badge, source timestamp, freshness label, approved excerpt, and `Open evidence pack`. The stale Drive/docs node also says `Conflicting evidence — older guidance`.
-
-The drawer has an accessible name built from the selected source, traps focus while modal on narrow screens, returns focus to its node on close, supports Escape, and never displays a raw source link.
-
-## Fixed-layout SVG graph
-
-Use a dependency-free semantic SVG—no graph package or runtime force simulation. The viewBox, node positions, and edge paths are fixed:
+## Repository and runtime topology
 
 ```text
-                       GitHub        Jira
-                          \          /
-      Claude Code -------- COR-123 -------- Slack (gold, fresh; arrives live)
-                          /          \
-                       Email     Drive/docs (bronze, conflicting)
+cortex/
+├── apps/
+│   └── web/
+│       ├── app/
+│       │   ├── (product)/layout.tsx
+│       │   ├── (product)/dashboard/page.tsx
+│       │   ├── (product)/sources/page.tsx
+│       │   ├── (product)/tasks/[taskRef]/page.tsx
+│       │   └── api/cortex/[...path]/route.ts
+│       ├── components/{shell,dashboard,sources,task-context}/
+│       ├── lib/{cortex-api,contracts,demo-state,motion}.ts
+│       └── public/providers/
+├── src/cortex/                 # existing FastAPI backend
+└── docker-compose.yml          # adds web service and health dependency
 ```
 
-- `COR-123` is the large central task node.
-- Snapshot supporting edges use existing Cortex neutral/semantic palette tokens.
-- Slack uses the landed gold/fresh treatment only after a `mode: live` response.
-- Drive/docs uses bronze/conflict treatment and a visible conflict indicator; color is never the only signal.
-- Claude Code has a visually distinct agent-session treatment plus textual label.
-- Every node is a real focusable control with an accessible label containing provider, mode, and freshness. Tab/Shift+Tab selects nodes; Enter/Space opens the drawer.
-- Edges are non-interactive decorations; accessible reading order matches card order, then task, then graph evidence nodes.
+- The browser calls only same-origin `/api/cortex/*`.
+- The Next.js route handler forwards an allowlisted set of read/demo requests
+  to FastAPI using `CORTEX_API_INTERNAL_URL`.
+- Browser-supplied workspace or actor headers are ignored. The BFF derives demo
+  identity from server configuration or an authenticated session.
+- Simulator mutations do not pass through a generic wildcard. A narrow demo
+  action gets its own route, method, CSRF check, and allowlist.
+- Existing FastAPI `/ui` screens remain available for internal diagnostics but
+  are not part of the presentation product.
+- Compose publishes the frontend on `http://localhost:3000` and keeps FastAPI
+  on the internal network plus its diagnostic port.
 
-Desktop uses a stable two-column composition: cards/status left and a large graph right, with drawer adjacent to or overlaying graph. Below 900 px stack cards, status, graph, then drawer; retain the fixed SVG viewBox and avoid label text smaller than readable size. At 200% zoom and 320 CSS px, all actions and disclosure remain available without two-dimensional page scroll for ordinary reading.
+Official implementation references:
 
-## Visual and accessibility requirements
+- [Next.js App Router](https://nextjs.org/docs/app)
+- [Next.js rewrites](https://nextjs.org/docs/app/api-reference/config/next-config-js/rewrites)
+- [Tailwind CSS with Next.js](https://tailwindcss.com/docs/installation/framework-guides/nextjs)
+- [Motion for React](https://motion.dev/docs/react)
+- [Reduced motion](https://motion.dev/docs/react-use-reduced-motion)
 
-- Reuse landed Cortex light/dark tokens, semantic warning colors, and existing button/card conventions; do not invent a second palette.
-- Maintain WCAG AA contrast for text, node labels, badges, focus states, and gold/bronze treatments in both themes.
-- Give the page one H1, logical H2s for Sources and Task evidence, and an `aria-live="polite"` region for arrival/timeout only. Do not announce every poll.
-- Provider icons are decorative when adjacent text is visible; otherwise name them. Respect `prefers-reduced-motion`.
-- All cards, nodes, evidence-pack links, and close controls work by keyboard with clear focus. Do not use hover-only content.
+## Data-fetching boundary
 
-## Bounded implementation tickets
+Server Components fetch stable initial data:
 
-1. **Demo route shell and disclosure:** add `/ui/demo`, source card data, exact labels/badges, theme-consistent layout, and static status regions.
-2. **Connector convergence state:** implement local Consume/auto-demo state, three-second sequence, truthful copy, and reduced-motion path.
-3. **Task graph component:** implement fixed SVG layout, safe graph projection, supporting/conflicting/fresh/agent treatments, and responsive behavior.
-4. **Live Slack polling:** add one-second non-overlapping polls, 45-second ceiling, lifecycle cleanup, arrival/timeout/error states, and arrival motion.
-5. **Citation drawer:** add safe citation display, focus management, keyboard controls, and evidence-pack action.
-6. **Frontend verification:** add focused component/integration tests and browser captures for the cases below.
+- workspace identity and demo disclosure;
+- source summaries and verified counts;
+- recent task contexts;
+- initial `TaskEvidenceGraph`;
+- initial evidence pack for `COR-123`.
 
-## Validation and acceptance
+Client Components own interaction only:
 
-Automated checks:
+- connector-card presentation state;
+- command palette and responsive navigation;
+- graph node selection;
+- citation drawer focus management;
+- bounded live-Slack polling;
+- Motion transitions.
 
-- Unit-test card labels, mode badges, and Consume actions to ensure no browser ingestion/OAuth request is issued.
-- Test full card sequence completes in <=3 seconds and reduced motion renders final states without timing dependence.
-- Test polling starts only in the live window, runs once per second without overlap, stops on a live Slack node or exactly at 45 seconds, and cleans up on unmount.
-- Test a transient poll failure preserves the current graph and timeout never creates Slack evidence.
-- Test arrival adds node/edge once, announces correctly, and skips arrival animation if Slack existed at initial load.
-- Test conflict and agent-session semantics are not color-only, plus drawer content/focus/Escape and keyboard graph selection.
-- Run repository lint, typecheck, production build, and browser checks at desktop and 320 px/reduced-motion viewports.
+No client component imports an internal FastAPI URL. Typed functions in
+`lib/cortex-api.ts` validate runtime responses before rendering.
 
-Acceptance is met when a presenter can load `/ui/demo`, consume all six pre-indexed cards in approximately three seconds, wait for a real Slack-backed graph response, see its gold node within ten seconds of webhook receipt, and inspect Slack, Claude Code, and stale Drive/docs provenance. The screen always discloses source modes and never implies interactive provider connection or hides a live failure behind simulation.
+```ts
+type SourceMode = "live" | "demo_snapshot" | "fixture";
+
+type DashboardSummary = {
+  reportId: string;
+  generatedAt: string;
+  indexedEvents: number;
+  indexedChunks: number;
+  queryCount: number;
+  sourceCount: number;
+  liveSourceCount: number;
+  freshness: "fresh" | "degraded" | "stale";
+  sources: SourceSummary[];
+  recentTasks: TaskSummary[];
+};
+
+type SourceSummary = {
+  provider:
+    | "slack"
+    | "github"
+    | "jira"
+    | "email"
+    | "drive_docs"
+    | "claude_code";
+  displayName: string;
+  mode: SourceMode;
+  status: "ready" | "presenting" | "waiting_live" | "error";
+  indexedEvents: number;
+  lastIndexedAt: string | null;
+  disclosure: string;
+};
+```
+
+Python schemas are canonical. TypeScript contracts are generated from or tested
+against backend OpenAPI/JSON fixtures; they may not drift silently.
+
+## Product shell
+
+Use a dense, restrained, Linear-inspired shell:
+
+- 232 px persistent left navigation above 1024 px.
+- 64 px rail from 768–1023 px; mobile sheet below 768 px.
+- 48 px top context bar with workspace, `⌘K`, environment, and demo disclosure.
+- Main content uses a 12-column grid, 24 px gutters, and 1540 px maximum width.
+- One primary action per view.
+
+```text
+Cortex
+Overview
+Sources
+Tasks
+────────
+MCP access
+Demo status
+Settings
+```
+
+Only Overview, Sources, and `COR-123` need complete demo behavior. Other items
+may be visibly disabled with `After hackathon`; they must not lead to dead
+screens.
+
+## View responsibilities
+
+### `/dashboard`
+
+Combine connector readiness and evidence proof:
+
+- verified metric cards for events, chunks, queries, and freshness;
+- compact six-provider readiness strip;
+- dominant `Continue COR-123` card with evidence coverage;
+- bounded task-context graph preview;
+- recent safe evidence activity;
+- secondary `Manage sources` action.
+
+The preview is a task projection, not a global Obsidian graph.
+
+### `/sources`
+
+Show six fixed provider cards and an `Indexing proof` panel:
+
+- official icon and text name;
+- `Live` or `Demo snapshot` badge;
+- indexed-event count and last-indexed timestamp;
+- evidence role;
+- `Connect`/`Ready` presentation state;
+- `View evidence` deep link.
+
+The proof panel shows accepted-run counts, report ID, Qdrant status, and source
+truth. `Connect` animates prepared evidence into the panel without invoking
+provider OAuth.
+
+### `/tasks/COR-123`
+
+The hero view contains:
+
+- incident header and freshness;
+- agent-ready context summary;
+- fixed-layout evidence graph;
+- evidence timeline;
+- live Slack waiting/arrival state;
+- citation drawer;
+- `Copy MCP prompt` and Claude Code setup instructions, without claiming native
+  session control.
+
+## Motion system
+
+Use the current `motion` package imported from `motion/react`.
+
+| Interaction | Motion | Duration | Reduced motion |
+| --- | --- | --- | --- |
+| Route content | opacity + 4 px settle | 160 ms | opacity only, 80 ms |
+| Source reveal | border/color + opacity | 180 ms | instant |
+| Metric update | number crossfade | 180 ms | replace |
+| Graph arrival | opacity + scale 0.96→1 | 320 ms | immediate |
+| Slack proof | one outline pulse | 700 ms | text only |
+| Drawer | opacity + x 12→0 | 180 ms | opacity only |
+
+Do not animate layout dimensions, run ambient graph motion, add parallax, or
+loop a pulse. Motion communicates cause and effect only. Use
+`useReducedMotion()` and preserve equivalent text.
+
+## Visual system
+
+```text
+navy        #2B4162  navigation and strong text
+blue        #385F71  links, selection, supporting evidence
+off-white   #F5F0F6  canvas
+gold        #D7B377  fresh/live demo emphasis
+bronze      #8F754F  stale/conflicting evidence
+```
+
+- Controls use 0–4 px radii; surfaces use 4–8 px.
+- No decorative shadows; borders and surface contrast define hierarchy.
+- Manrope headings, Inter body, DM Mono IDs/counts.
+- Provider logos retain official proportions and colors.
+- Gold is reserved for the fresh/live reveal, not generic CTAs.
+- Every state combines color with text, icon, or shape.
+
+## Error, loading, and recovery
+
+- Initial load uses geometry-matched skeletons.
+- Missing report shows `Verified demo report unavailable`; never fake zeroes.
+- Count mismatch shows `Report out of date` and operator status.
+- Graph failure preserves the task header and offers retry.
+- Poll failure preserves the last safe graph and retries within the window.
+- Timeout states `No live Slack update arrived in this window`; it never
+  synthesizes a live node.
+- If Slack exists at initial load, render it with `Already present when this
+  view loaded` and skip the reveal.
+
+## Implementation slices
+
+| Ticket | Deliverable | Depends on | Acceptance |
+| --- | --- | --- | --- |
+| FE-01 | Scaffold `apps/web`, TypeScript, Tailwind, Motion, lint, test, and build scripts | None | Empty product shell builds in CI and Compose. |
+| FE-02 | Add shared tokens, fonts, provider assets, shell, sidebar, top bar, and responsive navigation | FE-01 | Shell matches desktop/tablet/mobile geometry and keyboard order. |
+| FE-03 | Implement typed Cortex client, runtime validation, BFF allowlist, server-only identity, and safe errors | FE-01 + backend fixtures | Browser network log contains only same-origin calls. |
+| FE-04 | Build Dashboard metrics, source strip, active task, preview graph, activity, and error states | FE-02 + FE-03 | Every number exposes one report ID and timestamp. |
+| FE-05 | Build Sources grid, truth badges, reveal state, proof panel, and session persistence | FE-02 + FE-03 | Reveal issues no provider/OAuth/backfill request. |
+| FE-06 | Build Task Context header, synthesis, actions, evidence timeline, and initial graph | FE-02 + FE-03 + graph fixture | Pre-Slack evidence pack renders with citations/conflict. |
+| FE-07 | Add live-window state machine and non-overlapping polling | FE-06 + Slack graph fixture | Success, transient error, timeout, unmount, and already-present paths pass. |
+| FE-08 | Add semantic SVG interactions and citation drawer | FE-06 | Keyboard, focus return, mobile sheet, and safe excerpt tests pass. |
+| FE-09 | Add bounded Motion variants and reduced-motion substitutions | FE-05 + FE-07 + FE-08 | No looped/ambient animation; reduced mode retains all meaning. |
+| FE-10 | Add Playwright/axe capture matrix and presentation rehearsal | FE-04 through FE-09 | Eight required captures and 75-second product sequence pass. |
+
+FE-01 through FE-03 establish the shared boundary. FE-04 and FE-05 may then
+run in parallel with FE-06. FE-07 through FE-09 converge on Task Context;
+FE-10 is the release gate.
+
+## Testing and acceptance
+
+Automated:
+
+- Typecheck, lint, unit tests, and production build.
+- Contract fixtures for every BFF response.
+- Playwright path Dashboard → Sources → COR-123.
+- Assert source-mode labels and report IDs remain visible.
+- Assert `Connect` makes no OAuth/backfill/provider request.
+- Assert polling starts only in the live state, never overlaps, stops on
+  success/timeout/unmount, and never fabricates data.
+- Keyboard/focus tests for navigation, graph, drawer, and mobile sheet.
+- Axe checks plus reduced-motion and 200% zoom captures.
+
+Acceptance:
+
+- Three-view sequence completes within 75 seconds of the presentation.
+- Every displayed count traces to one accepted report ID.
+- Live Slack appears within ten seconds of backend graph availability.
+- Frontend works at 1440, 1024, 768, and 375 CSS px.
+- A fresh clone starts both services with one documented command.

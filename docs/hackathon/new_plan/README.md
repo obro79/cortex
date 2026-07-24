@@ -20,6 +20,8 @@ Claude Code checkpoint are labelled imported demo snapshots.
 5. [Live data, Slack, and Qdrant](05-live-data-slack-qdrant.md)
 6. [Slides, video, screenshots, and pitch](06-demo-assets-slides-video-pitch.md)
 7. [Execution tickets and acceptance](07-execution-tickets-and-acceptance.md)
+8. [Ambiguity register and decisions](08-ambiguity-register-and-decisions.md)
+9. [UI wireframes and interaction specification](09-ui-wireframes-and-interaction-spec.md)
 
 The parent direction remains
 [Always-Current Context Demo Plan](../2026-07-23-always-current-context-demo-plan.md).
@@ -47,6 +49,12 @@ the parent document controls the overall demo thesis.
 - UI proof: the new Slack graph node is the live-ingestion confirmation.
 - Checkpoint cadence: normal 50 messages or 15 minutes; demo 3 messages or
   30 seconds; final flush at session end.
+- Frontend: Next.js App Router, React, TypeScript, Tailwind CSS, and Motion for
+  React in `apps/web`, using a same-origin BFF to FastAPI.
+- Product surface: a Linear-inspired shell with Dashboard, Sources, and Task
+  Context views.
+- Dashboard proof: connector readiness and accepted evidence/indexing counts
+  appear together.
 
 ## Workstream ownership
 
@@ -55,7 +63,7 @@ the parent document controls the overall demo thesis.
 | A — Corpus and adapters | Incident manifest, Python fixture, snapshot payloads, email adapter, provider normalization tests | Emits validated `RawEventInput` records |
 | B — Retrieval and graph | Diversity reranking, golden evidence evaluator, graph contract/read model/API | Consumes canonical chunks and evidence packs |
 | C — Runtime and acceptance | Compose services, Qdrant readiness, signed Slack transition, operator command, end-to-end tests | Owns the reproducible acceptance command |
-| D — Frontend | `/ui/demo`, source cards, graph, citation drawer, accessibility | Consumes graph and evidence APIs only |
+| D — Frontend | `apps/web`, Dashboard, Sources, Task Context, graph, citation drawer, accessibility | Consumes allowlisted FastAPI contracts through the Next.js BFF |
 | E — Assets and pitch | Deck, intro video, screenshots, captions, narration, run of show | Uses verified UI captures and redacted report counts |
 
 No workstream may introduce a second retrieval implementation, let browser code
