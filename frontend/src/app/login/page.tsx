@@ -15,7 +15,7 @@ export default function LoginPage() {
             Cortex context is scoped to a workspace and checked against source
             permissions before it reaches an agent.
           </p>
-          <div className="mt-8 rounded-md border border-amber-400/30 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">Local fixture mode has no login or SSO flow. Open the control plane directly to inspect only synthetic fixture data.</div>
+          <div className="mt-8 rounded-md border border-warning/30 bg-warning/10 p-4 text-sm leading-6 text-warning-foreground">Local fixture mode has no login or SSO flow. Open the control plane directly to inspect only synthetic fixture data.</div>
           <Link
             className="mt-6 inline-flex text-sm text-muted-foreground hover:text-foreground"
             href="/"

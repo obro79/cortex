@@ -3,19 +3,33 @@
 @tailwind utilities;
 
 :root {
-  --background: 222 31% 5%;
-  --foreground: 220 20% 97%;
-  --muted: 220 18% 13%;
-  --muted-foreground: 220 10% 66%;
-  --popover: 220 23% 9%;
-  --popover-foreground: 220 20% 97%;
-  --border: 220 18% 18%;
-  --input: 220 18% 18%;
-  --primary: 220 20% 97%;
-  --primary-foreground: 222 31% 5%;
-  --secondary: 220 18% 13%;
-  --secondary-foreground: 220 20% 97%;
-  --ring: 218 70% 76%;
+  /* Cortex palette: navy, blue slate, lavender white, warm gold, bronze. */
+  --background: 290 23% 95%;
+  --foreground: 214 39% 28%;
+  --muted: 290 16% 90%;
+  --muted-foreground: 199 34% 33%;
+  --popover: 290 23% 98%;
+  --popover-foreground: 214 39% 28%;
+  --border: 39 29% 72%;
+  --input: 39 29% 72%;
+  --primary: 214 39% 28%;
+  --primary-foreground: 290 23% 95%;
+  --secondary: 199 34% 33%;
+  --secondary-foreground: 290 23% 95%;
+  --accent: 42 54% 65%;
+  --accent-foreground: 214 39% 28%;
+  --warning: 42 54% 65%;
+  --warning-foreground: 39 29% 44%;
+  --ring: 42 54% 65%;
+  --success: 152 50% 34%;
+  --success-foreground: 0 0% 100%;
+  --danger: 0 62% 46%;
+  --danger-foreground: 0 0% 100%;
+
+  /* Short semantic aliases for non-Tailwind consumers. */
+  --bg: var(--background);
+  --ink: var(--foreground);
+  --line: var(--border);
   --radius: 0.5rem;
   --font-sans: ui-sans-serif, Inter, "SF Pro Text", "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
@@ -23,8 +37,34 @@
     "Times New Roman", serif;
   --font-mono: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo,
     monospace;
+  color-scheme: light;
+  background: hsl(var(--background));
+}
+
+.dark {
+  --background: 214 39% 28%;
+  --foreground: 290 23% 95%;
+  --muted: 199 34% 33%;
+  --muted-foreground: 290 23% 88%;
+  --popover: 214 39% 24%;
+  --popover-foreground: 290 23% 95%;
+  --border: 199 34% 42%;
+  --input: 199 34% 42%;
+  --primary: 42 54% 65%;
+  --primary-foreground: 214 39% 22%;
+  --secondary: 199 34% 33%;
+  --secondary-foreground: 290 23% 95%;
+  --accent: 42 54% 65%;
+  --accent-foreground: 214 39% 22%;
+  --warning: 42 54% 65%;
+  --warning-foreground: 42 54% 78%;
+  --ring: 42 54% 65%;
+  --success: 152 58% 52%;
+  --success-foreground: 152 50% 14%;
+  --danger: 0 77% 66%;
+  --danger-foreground: 0 50% 16%;
+
   color-scheme: dark;
-  background: #080a0f;
 }
 
 * {
@@ -32,14 +72,14 @@
 }
 
 html {
-  background: #080a0f;
+  background: hsl(var(--background));
 }
 
 body {
   min-height: 100vh;
   margin: 0;
-  background: #080a0f;
-  color: #f7f8fb;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
   font-family: var(--font-sans);
   font-feature-settings: "rlig" 1, "calt" 1;
   letter-spacing: 0;
@@ -57,7 +97,8 @@ textarea {
 }
 
 ::selection {
-  background: rgba(137, 180, 255, 0.28);
+  background: hsl(var(--accent) / 0.45);
+  color: hsl(var(--accent-foreground));
 }
 
 @layer components {
