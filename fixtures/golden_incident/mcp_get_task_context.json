@@ -1,0 +1,58 @@
+{
+  "schema_version": "cortex.mcp_golden_exchange.v1",
+  "tool": "get_task_context",
+  "request": {
+    "task": {
+      "objective": "Continue COR-123. Explain the current incident state, what Developer A established, conflicting evidence, and the safest next action.",
+      "repository": "acme/payments-platform",
+      "branch": "incident/COR-123",
+      "issue_ids": [
+        "COR-123"
+      ],
+      "pull_request_numbers": [
+        184
+      ],
+      "file_hints": [
+        "src/session/middleware.py"
+      ]
+    },
+    "freshness": {
+      "maximum_age_seconds": 3600,
+      "require_fresh": false
+    },
+    "budget": {
+      "maximum_evidence_items": 6,
+      "maximum_tokens": 2000
+    }
+  },
+  "pre_live_assertions": {
+    "status": [
+      "partial",
+      "complete"
+    ],
+    "required_fixture_ids": [
+      "github-pr-184-rollout",
+      "jira-cor-123-incident",
+      "email-support-escalation",
+      "drive-session-runbook-stale",
+      "claude-checkpoint-developer-a"
+    ],
+    "required_conflict_fixture_id": "drive-session-runbook-stale",
+    "forbidden_fixture_id": "slack-live-fallback-confirmation"
+  },
+  "post_live_assertions": {
+    "status": [
+      "partial",
+      "complete"
+    ],
+    "required_fixture_ids": [
+      "slack-live-fallback-confirmation",
+      "github-pr-184-rollout",
+      "jira-cor-123-incident",
+      "drive-session-runbook-stale",
+      "claude-checkpoint-developer-a"
+    ],
+    "newest_fixture_id": "slack-live-fallback-confirmation",
+    "next_action_must_change": true
+  }
+}

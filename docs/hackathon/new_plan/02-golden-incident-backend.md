@@ -34,6 +34,13 @@ embedding profile, or retrieval branch is allowed.
 
 ## Corpus contract
 
+The frozen implementation manifest is
+`fixtures/golden_incident/manifest.json`. Its validated model and
+`RawEventInput` conversion live in `src/cortex/demo/golden_incident.py`.
+That conversion is the offline rehearsal path: its pending Slack transition is
+durably labelled `simulated_fallback`. A signed native Slack webhook remains
+the only path that may produce evidence described as live.
+
 Create a tracked Python fixture package and a versioned manifest, for example
 `src/cortex/dev/cor123/` and `tests/fixtures/cor123/manifest.json`. The manifest
 is the source of truth for count, stable identity, timestamps, source mode,

@@ -89,10 +89,7 @@ class McpServer:
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        if self.proxy_only and name not in {
-            "get_task_context",
-            "create_handoff_bundle",
-        }:
+        if self.proxy_only and name != "get_task_context":
             return {"ok": False, "error": "tool_unavailable_in_proxy_mode"}
         if name == "get_task_context" and self.task_context_proxy is not None:
             try:
@@ -118,7 +115,7 @@ class McpServer:
         return [
             definition
             for definition in definitions
-            if definition["name"] in {"get_task_context", "create_handoff_bundle"}
+            if definition["name"] == "get_task_context"
         ]
 
 
@@ -454,8 +451,9 @@ def list_tool_definitions() -> list[dict[str, object]]:
     task_context.update(
         {
             "description": (
-                "Return bounded, permission-filtered, cited company evidence for "
-                "a task. Cortex does not generate an answer or recommendation."
+                "Pull bounded, permission-filtered company context for a task, "
+                "including citations, source coverage, conflicts, and freshness. "
+                "Cortex does not control or resume agent sessions."
             ),
             "inputSchema": TaskContextRequest.model_json_schema(),
         }

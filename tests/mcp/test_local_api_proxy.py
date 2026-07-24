@@ -198,7 +198,7 @@ async def test_local_proxy_ignores_ambient_proxy_environment(monkeypatch) -> Non
     assert captured["trust_env"] is False
 
 
-async def test_proxy_mode_discovery_is_limited_to_proxy_and_safe_handoff() -> None:
+async def test_proxy_mode_discovery_exposes_only_task_context() -> None:
     server = create_local_proxy_server(
         task_context_proxy=ApiTaskContextProxy(
             _config(),
@@ -212,7 +212,4 @@ async def test_proxy_mode_discovery_is_limited_to_proxy_and_safe_handoff() -> No
 
     assert response is not None
     tools = response["result"]["tools"]
-    assert {tool["name"] for tool in tools} == {
-        "get_task_context",
-        "create_handoff_bundle",
-    }
+    assert {tool["name"] for tool in tools} == {"get_task_context"}

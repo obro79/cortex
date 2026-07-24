@@ -7,7 +7,7 @@
   "environment": "local",
   "provider": "slack",
   "source_ref_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-  "collection": "cortex-local-gemini-embedding-001-768",
+  "collection": "cortex-local-gemini-embedding-2-gemini2-1536-v1-1536",
   "counts": {
     "raw_events": 12,
     "source_objects": 12,

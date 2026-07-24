@@ -7,7 +7,7 @@ Accepted.
 ## Decision
 
 Implement embeddings behind a provider-neutral interface. Use Google
-`gemini-embedding-001` at 1536 dimensions as the v1 default, with OpenAI and
+`gemini-embedding-2` at 1536 dimensions as the current default, with OpenAI and
 other providers supported by adapter.
 
 ## What It Is
@@ -61,4 +61,3 @@ retrieval index version, content hash, vector hash, status, and error state.
 
 `cortexg` has an embedding provider interface and lifecycle. Cortex keeps that
 shape, changes the default to Gemini, and makes provider neutrality explicit.
-

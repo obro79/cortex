@@ -5,6 +5,9 @@ from datetime import UTC, datetime
 from cortex.contracts.entities import RawEvent
 from cortex.contracts.enums import RawEventStatus
 from cortex.ingestion.payloads import canonical_json_bytes
+from cortex.normalization.normalizers.demo_snapshots import (
+    normalize_demo_snapshot_payload,
+)
 from cortex.normalization.normalizers.github import normalize_github_payload
 from cortex.normalization.normalizers.linear import normalize_linear_payload
 from cortex.normalization.normalizers.repo_docs import normalize_repo_doc_payload
@@ -123,8 +126,19 @@ def test_registry_uses_provider_normalizers() -> None:
     registry = NormalizerRegistry()
 
     assert registry.resolve(raw_event("linear")).__name__ == "normalize_linear_payload"
+    assert registry.resolve(raw_event("github")) is normalize_github_payload
     assert registry.resolve(raw_event("github")).__name__ == "normalize_github_payload"
     assert (
         registry.resolve(raw_event("repo_docs")).__name__
         == "normalize_repo_doc_payload"
     )
+
+
+def test_registry_routes_only_explicit_demo_event_types_to_demo_normalizer() -> None:
+    registry = NormalizerRegistry()
+    demo_event = raw_event("github").model_copy(
+        update={"event_type": "github.pull_request.demo_snapshot"}
+    )
+
+    assert registry.resolve(demo_event) is normalize_demo_snapshot_payload
+    assert registry.resolve(raw_event("github")) is normalize_github_payload
