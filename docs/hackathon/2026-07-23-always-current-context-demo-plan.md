@@ -8,6 +8,12 @@
 
 **Thesis:** Always-current context for every agent
 
+## Detailed planning package
+
+The implementation plans, ticket breakdown, frontend specification, and demo
+asset production plan are maintained in
+[the `new_plan` package](new_plan/README.md).
+
 ## Summary
 
 The hero demo is a two-developer handoff during the `COR-123` session incident:
