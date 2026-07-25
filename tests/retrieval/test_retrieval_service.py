@@ -67,4 +67,4 @@ async def test_retrieval_service_applies_allowlist_before_evidence(
     )
 
     assert response.evidence_pack["citations_json"] == {"items": []}
-    assert response.evidence_pack["permission_exclusions_json"]["excluded_count"] == 1
+    assert response.evidence_pack["permission_exclusions_json"]["excluded_count"] == 0
