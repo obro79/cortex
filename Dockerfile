@@ -49,9 +49,12 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2)"
 
-FROM runtime AS api
-CMD ["uvicorn", "cortex.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
-
 FROM runtime AS worker
 HEALTHCHECK NONE
 CMD ["cortex-worker", "--role", "noop"]
+
+# Keep the HTTP API as the final target so hosts that build a Dockerfile without
+# an explicit target (such as Railway) get the safe, health-checkable service.
+# Compose still selects the worker target explicitly for background roles.
+FROM runtime AS api
+CMD ["uvicorn", "cortex.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

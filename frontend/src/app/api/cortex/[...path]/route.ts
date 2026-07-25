@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const LOCAL_API_ORIGIN = process.env.CORTEX_LOCAL_API_ORIGIN ?? "http://127.0.0.1:8000";
+// CORTEX_API_ORIGIN is the server-only deployed API URL. Keep the local alias
+// for existing development setups while allowing Vercel to point at Railway.
+const API_ORIGIN = process.env.CORTEX_API_ORIGIN
+  ?? process.env.CORTEX_LOCAL_API_ORIGIN
+  ?? "http://127.0.0.1:8000";
 const MAX_POST_BODY_BYTES = 64 * 1024;
 type RouteRule = { method: "GET" | "POST"; path: RegExp };
 
@@ -67,8 +71,8 @@ async function proxy(request: NextRequest, params: Promise<{ path: string[] }>) 
   if (!isAllowed(method, path)) return NextResponse.json({ detail: "Cortex local route is not allowed." }, { status: 404 });
 
   let target: URL;
-  try { target = new URL(`/${path}`, LOCAL_API_ORIGIN); }
-  catch { return NextResponse.json({ detail: "CORTEX_LOCAL_API_ORIGIN is invalid." }, { status: 500 }); }
+  try { target = new URL(`/${path}`, API_ORIGIN); }
+  catch { return NextResponse.json({ detail: "CORTEX_API_ORIGIN is invalid." }, { status: 500 }); }
 
   const declaredLength = Number(request.headers.get("content-length"));
   if (method === "POST" && Number.isFinite(declaredLength) && declaredLength > MAX_POST_BODY_BYTES) {
