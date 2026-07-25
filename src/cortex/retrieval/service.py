@@ -8,6 +8,7 @@ from cortex.chunking.config import RetrievalConfig
 from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
 from cortex.indexing.vector_memory import InMemoryVectorIndex
+from cortex.normalization.repositories import InMemoryRelationshipSeedRepository
 
 from .candidates import Candidate
 from .evidence import EvidencePackBuilder
@@ -45,6 +46,7 @@ class RetrievalService:
         evidence_repository: InMemoryEvidencePackRepository,
         publisher: EvidencePackPublisher,
         canonical_decisions: InMemoryCanonicalDecisionRepository | None = None,
+        relationship_seeds: InMemoryRelationshipSeedRepository | None = None,
     ) -> None:
         self.config = config
         self.source_chunks = source_chunks
@@ -61,6 +63,7 @@ class RetrievalService:
         self.evidence = evidence_repository
         self.publisher = publisher
         self.canonical_decisions = canonical_decisions
+        self.relationship_seeds = relationship_seeds
         self.canonical_adapter = CanonicalDecisionCandidateAdapter()
         self.permissions = PermissionFilter()
         self.builder = EvidencePackBuilder()
@@ -120,8 +123,12 @@ class RetrievalService:
                     query=query,
                 )
             )
+        candidates.extend(self._hint_candidates(workspace_id, plan))
 
         allowed, exclusions = self.permissions.filter(candidates, plan)
+        expanded = self._expand_relationships(workspace_id, allowed)
+        allowed, expansion_exclusions = self.permissions.filter(expanded, plan)
+        exclusions = self._merge_exclusions(exclusions, expansion_exclusions)
         ranked = self.ranker.rank(
             allowed,
             max_per_source_object=int(
@@ -178,3 +185,83 @@ class RetrievalService:
 
     async def get_related_work(self, **kwargs: object) -> RetrievalServiceResponse:
         return await self.retrieve_context(**kwargs)  # type: ignore[arg-type]
+
+    def _hint_candidates(self, workspace_id: str, plan: object) -> list[Candidate]:
+        if not hasattr(self.source_chunks, "list_all"):
+            return []
+        chunks = self.source_chunks.list_all(workspace_id)
+        issue_ids = set(getattr(plan, "issue_ids", []))
+        pr_numbers = set(getattr(plan, "pr_numbers", []))
+        file_paths = set(getattr(plan, "file_paths", []))
+        candidates = []
+        for chunk in chunks:
+            metadata = chunk.metadata_json
+            identifier = metadata.get("identifier")
+            number = metadata.get("number")
+            path = metadata.get("path")
+            changed_paths = metadata.get("changed_file_paths")
+            if (
+                (isinstance(identifier, str) and identifier in issue_ids)
+                or (number is not None and str(number) in pr_numbers)
+                or (isinstance(path, str) and path in file_paths)
+                or (
+                    isinstance(changed_paths, list)
+                    and any(str(value) in file_paths for value in changed_paths)
+                )
+            ):
+                candidates.append(
+                    Candidate(
+                        source_chunk=chunk,
+                        lexical_score=0.9,
+                        relationship_score=0.2,
+                        paths={"task_hint"},
+                    )
+                )
+        return candidates
+
+    def _expand_relationships(
+        self, workspace_id: str, candidates: list[Candidate]
+    ) -> list[Candidate]:
+        if self.relationship_seeds is None:
+            return candidates
+        source_object_ids = {
+            candidate.source_chunk.source_object_id for candidate in candidates
+        }
+        expanded = list(candidates)
+        existing_chunk_ids = {candidate.source_chunk.id for candidate in candidates}
+        for seed in self.relationship_seeds.list_all():
+            if seed.workspace_id != workspace_id:
+                continue
+            related_id = None
+            if seed.from_id in source_object_ids:
+                related_id = seed.to_id
+            elif seed.to_id in source_object_ids:
+                related_id = seed.from_id
+            if related_id is None:
+                continue
+            for chunk in self.source_chunks.list_by_source_object(
+                workspace_id, related_id
+            ):
+                if chunk.id in existing_chunk_ids:
+                    continue
+                existing_chunk_ids.add(chunk.id)
+                expanded.append(
+                    Candidate(
+                        source_chunk=chunk,
+                        relationship_score=seed.confidence,
+                        paths={f"relationship:{seed.relationship_type}"},
+                    )
+                )
+        return expanded
+
+    def _merge_exclusions(
+        self, first: dict[str, int | str], second: dict[str, int | str]
+    ) -> dict[str, int | str]:
+        excluded_count = int(first.get("excluded_count", 0)) + int(
+            second.get("excluded_count", 0)
+        )
+        reason = first.get("reason") or second.get("reason")
+        merged: dict[str, int | str] = {"excluded_count": excluded_count}
+        if reason:
+            merged["reason"] = str(reason)
+        return merged

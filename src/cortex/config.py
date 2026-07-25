@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     cortex_slack_connector_enabled: bool = Field(
         default=False, alias="CORTEX_SLACK_CONNECTOR_ENABLED"
     )
+    cortex_linear_connector_enabled: bool = Field(
+        default=False, alias="CORTEX_LINEAR_CONNECTOR_ENABLED"
+    )
+    cortex_github_connector_enabled: bool = Field(
+        default=False, alias="CORTEX_GITHUB_CONNECTOR_ENABLED"
+    )
+    cortex_repo_docs_connector_enabled: bool = Field(
+        default=False, alias="CORTEX_REPO_DOCS_CONNECTOR_ENABLED"
+    )
     cortex_event_bus: Literal["memory", "kafka"] = Field(
         default="memory", alias="CORTEX_EVENT_BUS"
     )
@@ -39,6 +48,13 @@ class Settings(BaseSettings):
     slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")
     slack_redirect_uri: str = Field(default="", alias="SLACK_REDIRECT_URI")
     slack_team_id: str = Field(default="", alias="SLACK_TEAM_ID")
+    linear_api_token: str = Field(default="", alias="LINEAR_API_TOKEN")
+    github_app_id: str = Field(default="", alias="GITHUB_APP_ID")
+    github_private_key: str = Field(default="", alias="GITHUB_PRIVATE_KEY")
+    github_installation_token: str = Field(
+        default="", alias="GITHUB_INSTALLATION_TOKEN"
+    )
+    github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
     kafka_consumer_group: str = Field(
