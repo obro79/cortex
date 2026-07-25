@@ -108,9 +108,7 @@ async def test_retrieval_service_supports_async_durable_repositories(
         publisher=EvidencePackPublisher(InMemoryEventBus()),
     )
 
-    response = await service.retrieve_context(
-        workspace_id="ws_1", query="COR-123"
-    )
+    response = await service.retrieve_context(workspace_id="ws_1", query="COR-123")
 
     assert response.status == "completed"
     assert requests.get_by_id(response.retrieval_request_id).status == "completed"

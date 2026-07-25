@@ -160,9 +160,7 @@ async def test_sqlalchemy_repository_leaves_transaction_control_to_caller(
     pending = await InMemoryOutboxRepository().enqueue(
         raw_event_id="raw_1", event=envelope()
     )
-    published = OutboxMessage(
-        **{**pending.__dict__, "status": OUTBOX_PUBLISHED}
-    )
+    published = OutboxMessage(**{**pending.__dict__, "status": OUTBOX_PUBLISHED})
     deadlettered = OutboxMessage(
         **{**pending.__dict__, "status": OUTBOX_DEADLETTERED, "attempt_count": 1}
     )

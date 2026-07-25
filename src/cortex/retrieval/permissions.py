@@ -31,7 +31,13 @@ class PermissionFilter:
             result = self.service.filter_candidates(
                 workspace_id=self.workspace_id,
                 candidates=candidates,
-                source_object_allowlist=plan.source_allowlist,
+                # ``QueryPlan.source_allowlist`` is a caller-requested
+                # *narrowing* filter.  It has already been applied by the
+                # lexical/vector retrievers and must never become an
+                # authorization bypass for a source-object ID supplied by an
+                # MCP client.  Only server-owned permission scopes and ACL
+                # snapshots can grant access here.
+                source_object_allowlist=None,
                 caller_principals=self.caller_principals,
             )
             return result.candidates, result.exclusions

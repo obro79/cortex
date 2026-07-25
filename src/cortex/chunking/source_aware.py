@@ -47,6 +47,7 @@ class SourceAwareChunker:
             "github_issue",
             "github_commit",
             "repo_doc",
+            "agent_checkpoint",
         }:
             return self._chunks_for_provider_text(source_object)
 
@@ -81,6 +82,7 @@ class SourceAwareChunker:
             "github_issue": "GitHub issue",
             "github_commit": "GitHub commit",
             "repo_doc": "Repo doc",
+            "agent_checkpoint": "Agent checkpoint",
         }
         metadata_keys = {
             "linear_issue": (
@@ -126,6 +128,13 @@ class SourceAwareChunker:
                 "ref",
                 "operation",
                 "is_stale",
+            ),
+            "agent_checkpoint": (
+                "source_kind",
+                "visibility",
+                "local_session_ref_hash",
+                "deletion_revocation_supported",
+                "transcript_capture",
             ),
         }
         metadata = {
@@ -226,6 +235,14 @@ class SourceAwareChunker:
         metadata = dict(metadata_json or {"object_type": source_object.object_type})
         metadata["provider"] = source_object.provider
         metadata["source_type"] = source_object.object_type
+        if source_object.occurred_at is not None:
+            metadata["occurred_at"] = source_object.occurred_at.isoformat()
+        if source_object.source_updated_at is not None:
+            metadata["source_updated_at"] = source_object.source_updated_at.isoformat()
+        # ``updated_at`` is set when Cortex writes the normalized canonical
+        # object, so it is the durable sync-observation timestamp rather than
+        # a provider-content timestamp.  Evidence freshness needs both.
+        metadata["last_synced_at"] = source_object.updated_at.isoformat()
         return SourceChunk(
             id=stable_chunk_id(
                 source_object.workspace_id,

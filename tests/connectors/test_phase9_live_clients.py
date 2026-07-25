@@ -140,14 +140,18 @@ async def test_real_github_client_uses_bearer_token_and_backfills_repo() -> None
 
 async def test_github_live_backfill_persists_fetched_events() -> None:
     class FakeGitHubClient:
-        async def backfill_repository(self, **_kwargs: object):
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def backfill_repository(self, **kwargs: object):
+            self.calls.append(kwargs)
             return type(
                 "Backfill",
                 (),
                 {
                     "events": [
                         {
-                            "repository": {"id": 44},
+                            "repository": {"id": "verified/canonical"},
                             "pull_request": {
                                 "id": 1,
                                 "number": 12,
@@ -158,18 +162,48 @@ async def test_github_live_backfill_persists_fetched_events() -> None:
                 },
             )()
 
+    client = FakeGitHubClient()
     services = GitHubConnectorServices(
         app_configured=True,
         installation_token="gh_installation_token",
-        client=FakeGitHubClient(),
+        installation_workspace_id="ws_1",
+        client=client,
+    )
+    services.select_repos(
+        workspace_id="ws_1",
+        repos=[
+            {
+                "id": "44",
+                "source_connection_id": "src_github",
+                "full_name": "verified/canonical",
+            }
+        ],
     )
 
     result = await services.live_backfill(
         workspace_id="ws_1",
         source_connection_id="src_github",
-        owner="acme",
-        repo="cortex",
+        owner="attacker",
+        repo="other-repository",
     )
 
     assert result["fetched"] == 1
     assert result["raw_events_created"] == 1
+    assert result["provenance"] == "live"
+    assert client.calls == [
+        {
+            "access_token": "gh_installation_token",
+            "owner": "verified",
+            "repo": "canonical",
+            "limit": 25,
+        }
+    ]
+    assert services.health("ws_1")["sync_sources"] == [
+        {
+            "source_connection_id": "src_github",
+            "status": "completed",
+            "cursor": "pull_request:1",
+            "last_error": None,
+            "provenance": "live",
+        }
+    ]

@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from cortex.contracts.entities import RawEvent
+from cortex.normalization.normalizers.agent_sessions import (
+    normalize_agent_session_payload,
+)
 from cortex.normalization.normalizers.fixtures import normalize_fixture_payload
 from cortex.normalization.normalizers.github import normalize_github_payload
 from cortex.normalization.normalizers.google_drive import normalize_google_drive_payload
@@ -23,6 +26,7 @@ class NormalizerRegistry:
     def __init__(self) -> None:
         self._normalizers: dict[str, Normalizer] = {
             "fixture": normalize_fixture_payload,
+            "agent_session": normalize_agent_session_payload,
             "slack": normalize_slack_payload,
             "linear": normalize_linear_payload,
             "github": normalize_github_payload,

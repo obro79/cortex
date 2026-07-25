@@ -194,6 +194,60 @@ async def test_index_worker_deletes_stale_chunk_instead_of_resurrecting_it(
     assert embedding.id not in vectors.points.get("fixture-cortex-dev", {})
 
 
+async def test_index_worker_retries_when_stale_delete_is_not_observed(
+    phase4_source_object: SourceObject,
+) -> None:
+    chunks = InMemorySourceChunkRepository()
+    chunk = SourceAwareChunker(
+        load_retrieval_config().chunking
+    ).chunks_for_source_object(phase4_source_object)[0]
+    chunks.upsert_many([chunk])
+    events = InMemoryEventBus()
+    embeddings = InMemoryEmbeddingRecordRepository()
+    provider = DeterministicEmbeddingProvider(dimensions=8, version="emb-v1")
+    embedding_service = EmbeddingService(
+        source_chunks=chunks,
+        embeddings=embeddings,
+        provider=provider,
+        publisher=EmbeddingPublisher(events),
+    )
+    queued = await embedding_service.queue_for_chunk(chunk.id)
+    embedding = await embedding_service.complete(queued.record.id)
+    chunks._records[chunk.id] = chunk.model_copy(  # noqa: SLF001 - fixture setup
+        update={"status": SourceChunkStatus.STALE}
+    )
+    jobs = InMemoryIndexJobRepository()
+    vectors = InMemoryVectorIndex()
+    await vectors.ensure_collection("fixture-cortex-dev", 8)
+    await vectors.upsert(
+        "fixture-cortex-dev",
+        embedding.id,
+        [0.0] * 8,
+        {"workspace_id": "ws_1", "status": "active"},
+    )
+
+    async def unverified(*_args: object, **_kwargs: object) -> bool:
+        return False
+
+    vectors.verify_point = unverified  # type: ignore[method-assign]
+    worker = IndexWorker(
+        index_service=IndexJobService(jobs, IndexPublisher(events)),
+        embeddings=embeddings,
+        source_chunks=chunks,
+        embedding_provider=provider,
+        vector_index=vectors,
+    )
+    enqueued = await worker.handle_embedding_completed(events.list_events()[-1])
+    result = await worker.handle_index_requested(events.list_events()[-1])
+
+    assert result["status"] == "retryable"
+    assert result["reason"] == "vector_index_delivery_unverified"
+    assert (
+        jobs.get_by_id(enqueued["index_job_id"]).status
+        == IndexJobStatus.FAILED_RETRYABLE
+    )
+
+
 async def test_index_worker_marks_invalid_job_terminal(
     phase4_source_object: SourceObject,
 ) -> None:
@@ -206,7 +260,9 @@ async def test_index_worker_marks_invalid_job_terminal(
     embeddings = InMemoryEmbeddingRecordRepository()
     provider = DeterministicEmbeddingProvider(dimensions=8, version="emb-v1")
     embedding_service = EmbeddingService(
-        source_chunks=chunks, embeddings=embeddings, provider=provider,
+        source_chunks=chunks,
+        embeddings=embeddings,
+        provider=provider,
         publisher=EmbeddingPublisher(events),
     )
     queued = await embedding_service.queue_for_chunk(chunk.id)
@@ -214,8 +270,11 @@ async def test_index_worker_marks_invalid_job_terminal(
     jobs = InMemoryIndexJobRepository()
     worker = IndexWorker(
         index_service=IndexJobService(jobs, IndexPublisher(events)),
-        embeddings=embeddings, source_chunks=chunks, embedding_provider=provider,
-        vector_index=InMemoryVectorIndex(), retry_policy=RetryPolicy(max_attempts=1),
+        embeddings=embeddings,
+        source_chunks=chunks,
+        embedding_provider=provider,
+        vector_index=InMemoryVectorIndex(),
+        retry_policy=RetryPolicy(max_attempts=1),
     )
     enqueued = await worker.handle_embedding_completed(events.list_events()[-1])
     job = jobs.get_by_id(enqueued["index_job_id"])

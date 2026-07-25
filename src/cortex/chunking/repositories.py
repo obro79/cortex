@@ -98,9 +98,7 @@ class InMemorySourceChunkRepository:
             if chunk.workspace_id == workspace_id
             and chunk.status == status
             and (chunking_version is None or chunk.chunking_version == chunking_version)
-            and (
-                not allowed_sources or chunk.source_object_id in allowed_sources
-            )
+            and (not allowed_sources or chunk.source_object_id in allowed_sources)
             and (
                 not allowed_providers
                 or _provider_from_metadata(chunk.metadata_json) in allowed_providers
@@ -379,6 +377,7 @@ class SqlAlchemySourceChunkRepository:
             (source_chunk_from_record(record), float(score))
             for record, score in result.tuples()
         ]
+
     async def mark_stale_replaced_by(
         self,
         *,

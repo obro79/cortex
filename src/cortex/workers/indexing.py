@@ -153,6 +153,7 @@ class IndexWorker:
         # completes. Never resurrect it in the derived index.
         if chunk.status != SourceChunkStatus.ACTIVE:
             await self.vector_index.delete(collection, point_id)
+            await self._verify_delivery(collection, point_id, expected_payload=None)
             return
         output = await maybe_await(
             self.embedding_provider.embed(embedding.input_text_hash, chunk.text)
@@ -221,18 +222,15 @@ class IndexWorker:
         """Require a read-after-write/delete observation before job completion."""
         if self.vector_index is None:
             raise RuntimeError("vector_index_unconfigured")
-        verifier = getattr(self.vector_index, "verify_point", None)
-        if verifier is None:
-            raise RuntimeError("vector_index_verification_unavailable")
-        verified = await maybe_await(
-            verifier(collection, point_id, expected_payload=expected_payload)
+        verified = await self.vector_index.verify_point(
+            collection,
+            point_id,
+            expected_payload=expected_payload,
         )
         if verified is not True:
             raise RuntimeError("vector_index_delivery_unverified")
 
-    async def _record_failure(
-        self, job: IndexJob, error: Exception
-    ) -> IndexJob | None:
+    async def _record_failure(self, job: IndexJob, error: Exception) -> IndexJob | None:
         error_code = self._error_code(error)
         error_message = type(error).__name__
         if self._is_terminal(error):
@@ -261,7 +259,9 @@ class IndexWorker:
                     job.id,
                     error_code,
                     error_message,
-                    next_retry_at=self.retry_policy.retry_at(attempt_count=attempt_count),
+                    next_retry_at=self.retry_policy.retry_at(
+                        attempt_count=attempt_count
+                    ),
                 )
             ),
         )

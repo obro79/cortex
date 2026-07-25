@@ -67,10 +67,36 @@ async def select_repos(
         dimension=UsageDimension.SOURCES,
         requested_quantity=len(repos),
     )
-    return get_github_services(request).select_repos(
+    result = get_github_services(request).select_repos(
         workspace_id=workspace_id,
         repos=[dict(repo) for repo in repos],
     )
+    if result.get("ok") is not True:
+        raise HTTPException(status_code=409, detail=result)
+    return result
+
+
+@router.delete("/sources/{repo_id}")
+async def remove_repo(
+    request: Request,
+    repo_id: str,
+    workspace_id: str,
+    source_connection_id: str | None = None,
+    context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
+) -> dict[str, object]:
+    require_permission(
+        context,
+        workspace_id=workspace_id,
+        permission=Permission.SOURCE_SELECT,
+    )
+    result = await get_github_services(request).remove_repo(
+        workspace_id=workspace_id,
+        repo_id=repo_id,
+        source_connection_id=source_connection_id,
+    )
+    if result.get("ok") is not True:
+        raise HTTPException(status_code=409, detail=result)
+    return result
 
 
 @router.post("/backfill/{source_connection_id}")
@@ -110,12 +136,8 @@ async def backfill_live(
     context: TenantContext = TENANT_CONTEXT_DEPENDENCY,
 ) -> dict[str, object]:
     workspace_id = str(body.get("workspace_id", ""))
-    owner = str(body.get("owner", ""))
-    repo = str(body.get("repo", ""))
-    if not workspace_id or not owner or not repo:
-        raise HTTPException(
-            status_code=422, detail="workspace_id, owner, repo required"
-        )
+    if not workspace_id:
+        raise HTTPException(status_code=422, detail="workspace_id required")
     require_permission(
         context,
         workspace_id=workspace_id,
@@ -130,8 +152,8 @@ async def backfill_live(
     return await get_github_services(request).live_backfill(
         workspace_id=workspace_id,
         source_connection_id=source_connection_id,
-        owner=owner,
-        repo=repo,
+        # The service resolves these from the verified source selection. Do not
+        # use untrusted request values to choose a GitHub repository.
         limit=int(body.get("limit", 25)),
     )
 

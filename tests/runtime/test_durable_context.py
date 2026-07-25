@@ -1,10 +1,13 @@
 from typing import cast
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cortex.api.app import create_app
 from cortex.config import Settings
 from cortex.indexing.qdrant import QdrantVectorIndex
+from cortex.permissions.scopes import InMemoryPermissionScopeRepository
+from cortex.permissions.service import PermissionService
 from cortex.runtime import CortexRuntime
 from cortex.runtime.durable import DurableContextRetrieval
 
@@ -28,14 +31,34 @@ def test_durable_retrieval_uses_indexing_collection_name_convention() -> None:
     )
 
 
-def test_sql_app_composes_durable_runtime_only_with_qdrant() -> None:
+def test_sql_app_requires_permission_factory_before_composing_runtime() -> None:
+    settings = Settings(
+        cortex_state_backend="sql",
+        database_url="postgresql+asyncpg://user:pass@localhost/cortex",
+        qdrant_url="http://localhost:6333",
+    )
+
+    unavailable = create_app(settings)
+    assert not hasattr(unavailable.state, "cortex_runtime")
+
     app = create_app(
-        Settings(
-            cortex_state_backend="sql",
-            database_url="postgresql+asyncpg://user:pass@localhost/cortex",
-            qdrant_url="http://localhost:6333",
-        )
+        settings,
+        durable_permission_service_factory=lambda _session: PermissionService(
+            InMemoryPermissionScopeRepository()
+        ),
     )
 
     assert isinstance(app.state.cortex_runtime, CortexRuntime)
     assert isinstance(app.state.cortex_runtime.retrieval, DurableContextRetrieval)
+
+
+def test_durable_retrieval_requires_a_permission_service_factory() -> None:
+    settings = Settings(cortex_env="test", qdrant_url="http://localhost:6333")
+    retrieval = DurableContextRetrieval(
+        session_factory=cast(async_sessionmaker[AsyncSession], object()),
+        settings=settings,
+        vector_index=cast(QdrantVectorIndex, object()),
+    )
+
+    with pytest.raises(RuntimeError, match="durable_permission_service_unavailable"):
+        retrieval._service(cast(AsyncSession, object()))

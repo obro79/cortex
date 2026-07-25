@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cortex.chunking.config import RetrievalConfig, load_retrieval_config
@@ -12,6 +14,7 @@ from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.indexing.qdrant import QdrantVectorIndex
 from cortex.permissions import ProviderAclPrincipal
+from cortex.permissions.service import PermissionService
 from cortex.retrieval.publishers import EvidencePackPublisher
 from cortex.retrieval.repositories import (
     SqlAlchemyEvidencePackRepository,
@@ -35,6 +38,8 @@ class DurableContextRetrieval:
         settings: Settings,
         config: RetrievalConfig | None = None,
         vector_index: QdrantVectorIndex | None = None,
+        permission_service_factory: Callable[[AsyncSession], PermissionService]
+        | None = None,
     ) -> None:
         if not settings.qdrant_url:
             raise ValueError("QDRANT_URL is required for durable context retrieval")
@@ -42,6 +47,11 @@ class DurableContextRetrieval:
         self.settings = settings
         self.config = config or load_retrieval_config()
         self.vector_index = vector_index or QdrantVectorIndex.from_settings(settings)
+        # SQL scopes and provider ACL snapshots must be injected by the
+        # composition root.  Until their durable repositories are available,
+        # task retrieval fails closed instead of treating all canonical chunks
+        # as readable.
+        self.permission_service_factory = permission_service_factory
         self.vector_collection = settings.qdrant_collection_name(
             embedding_model=self._embedding_model,
             embedding_version=self.config.embeddings.version,
@@ -65,6 +75,8 @@ class DurableContextRetrieval:
         )
 
     def _service(self, session: AsyncSession) -> RetrievalService:
+        if self.permission_service_factory is None:
+            raise RuntimeError("durable_permission_service_unavailable")
         return RetrievalService(
             config=self.config,
             source_chunks=SqlAlchemySourceChunkRepository(session),
@@ -78,6 +90,7 @@ class DurableContextRetrieval:
                 dimensions=self._embedding_dimensions,
                 version=self.config.embeddings.version,
             ),
+            permission_service=self.permission_service_factory(session),
         )
 
     async def retrieve_context(

@@ -25,4 +25,15 @@ npm run build
 
 - `/`: Linear-inspired product landing page.
 - `/login`: workspace access entry.
-- `/ui/context`: authenticated context-console placeholder.
+- `/ui/context`: authenticated task-context diagnostic.
+- `/ui/evidence/[evidencePackId]`: authenticated evidence-pack record inspector.
+- `/ui/health`: local API readiness display.
+- `/ui/mcp`: MCP capability/setup status (no unverified launch command).
+- `/ui/pipeline/[runId]`: local-fixture pipeline run reference.
+
+The same-origin BFF only proxies allowlisted API paths. Its documented fixture
+read routes are `GET /api/cortex/dev/state`,
+`GET /api/cortex/dev/pipeline/runs/[runId]`, and
+`GET /api/cortex/dev/evidence-packs/[evidencePackId]`; they remain available
+only when the backend's local dev workbench is enabled. It does not expose
+fixture mutation or execution routes to the browser.

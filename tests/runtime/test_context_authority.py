@@ -6,6 +6,8 @@ from cortex.context_gate.service import ContextGateService
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.permissions import ProviderAclPrincipal
 from cortex.retrieval.defaults import create_empty_retrieval_service
+from cortex.retrieval.service import RetrievalServiceResponse
+from cortex.retrieval.task_context import TaskContextRequest
 from cortex.runtime import CortexAuthority, CortexRuntime, create_local_runtime
 
 
@@ -87,3 +89,62 @@ async def test_evidence_bootstrap_uses_typed_runtime_reader() -> None:
 
     assert evidence_pack is not None
     assert evidence_pack["id"] == retrieval.evidence_pack_id
+
+
+async def test_task_context_forwards_structured_hints_to_query_planning() -> None:
+    class CapturingRetrieval:
+        def __init__(self) -> None:
+            self.query = ""
+
+        async def retrieve_context(self, **kwargs: object) -> RetrievalServiceResponse:
+            self.query = str(kwargs["query"])
+            return RetrievalServiceResponse(
+                ok=True,
+                retrieval_request_id="rr_1",
+                evidence_pack_id="ep_1",
+                text="",
+                evidence_pack={
+                    "citations_json": {"items": []},
+                    "candidate_summary_json": {"errors": {}, "versions": {}},
+                    "missing_context_json": {},
+                    "conflict_summary_json": {},
+                },
+                status="completed",
+                latency_ms=1,
+            )
+
+        async def get_related_work(self, **kwargs: object) -> RetrievalServiceResponse:
+            return await self.retrieve_context(**kwargs)
+
+        def read_evidence_pack(self, evidence_pack_id: str) -> object:
+            raise KeyError(evidence_pack_id)
+
+        def read_retrieval_request(self, retrieval_request_id: str) -> object:
+            raise KeyError(retrieval_request_id)
+
+    retrieval = CapturingRetrieval()
+    runtime = CortexRuntime(retrieval=retrieval, live_data=False)
+    request = TaskContextRequest.model_validate(
+        {
+            "task": {
+                "objective": "Investigate auth regression",
+                "repository": "acme/cortex",
+                "branch": "fix/auth",
+                "issue_ids": ["COR-123"],
+                "pull_request_numbers": [42],
+                "file_hints": ["src/cortex/runtime/context.py"],
+            }
+        }
+    )
+
+    await runtime.get_task_context(
+        authority=CortexAuthority(
+            workspace_id="ws_1", actor_id="actor_1", trace_id="trace_1"
+        ),
+        request=request,
+    )
+
+    assert "Investigate auth regression" in retrieval.query
+    assert "COR-123" in retrieval.query
+    assert "#42" in retrieval.query
+    assert "src/cortex/runtime/context.py" in retrieval.query

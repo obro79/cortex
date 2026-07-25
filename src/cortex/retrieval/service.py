@@ -191,6 +191,12 @@ class RetrievalService:
             versions=versions,
         )
         payloads["candidate_summary_json"]["errors"] = errors
+        payloads["candidate_summary_json"]["lexical_candidate_count"] = len(
+            lexical_candidates
+        )
+        payloads["candidate_summary_json"]["vector_candidate_count"] = len(
+            vector_candidates
+        )
         evidence_pack = await maybe_await(
             self.evidence.create(
                 workspace_id=workspace_id,
@@ -227,12 +233,26 @@ class RetrievalService:
         if not hasattr(self.source_chunks, "list_all"):
             return []
         chunks = await maybe_await(self.source_chunks.list_all(workspace_id))
+        allowed_sources = set(getattr(plan, "source_allowlist", []))
+        allowed_providers = {
+            provider.lower()
+            for provider in getattr(plan, "provider_filters", [])
+            if isinstance(provider, str) and provider.strip()
+        }
         issue_ids = set(getattr(plan, "issue_ids", []))
         pr_numbers = set(getattr(plan, "pr_numbers", []))
         file_paths = set(getattr(plan, "file_paths", []))
         candidates = []
         for chunk in chunks:
+            if allowed_sources and chunk.source_object_id not in allowed_sources:
+                continue
             metadata = chunk.metadata_json
+            provider = metadata.get("provider")
+            if allowed_providers and (
+                not isinstance(provider, str)
+                or provider.lower() not in allowed_providers
+            ):
+                continue
             identifier = metadata.get("identifier")
             number = metadata.get("number")
             path = metadata.get("path")

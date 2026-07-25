@@ -42,6 +42,38 @@ async def test_retrieval_with_permission_service_fails_closed_without_scopes(
     assert exclusions["reason"] == "no_active_permission_scope"
 
 
+async def test_caller_source_filter_never_bypasses_permission_scopes(
+    phase4_source_object,
+) -> None:
+    config = load_retrieval_config()
+    chunks = InMemorySourceChunkRepository()
+    chunk = SourceAwareChunker(config.chunking).chunks_for_source_object(
+        phase4_source_object
+    )[0]
+    chunks.upsert_many([chunk])
+    service = RetrievalService(
+        config=config,
+        source_chunks=chunks,
+        vector_index=InMemoryVectorIndex(),
+        request_repository=InMemoryRetrievalRequestRepository(),
+        evidence_repository=InMemoryEvidencePackRepository(),
+        publisher=EvidencePackPublisher(InMemoryEventBus()),
+        permission_service=PermissionService(InMemoryPermissionScopeRepository()),
+    )
+
+    response = await service.retrieve_context(
+        workspace_id="ws_1",
+        query="session reads COR-123",
+        source_allowlist=[chunk.source_object_id],
+    )
+
+    assert response.evidence_pack["citations_json"] == {"items": []}
+    assert (
+        response.evidence_pack["permission_exclusions_json"]["reason"]
+        == "no_active_permission_scope"
+    )
+
+
 async def test_retrieval_with_permission_service_allows_linear_team_scope(
     phase4_source_object,
 ) -> None:

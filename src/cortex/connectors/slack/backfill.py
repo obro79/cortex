@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from cortex.contracts.entities import BackfillJob
+from cortex.contracts.enums import OAuthInstallationStatus, SourceConnectionStatus
 from cortex.ingestion.raw_events import RawEventIdempotencyConflict, RawEventInput
 from cortex.ingestion.service import IngestionResult
 from cortex.platform.rate_limits import (
@@ -61,6 +62,26 @@ class SlackBackfillService:
         source = await maybe_await(
             self.source_connections.get_by_id(source_connection_id)
         )
+        if (
+            source.workspace_id != workspace_id
+            or source.provider != "slack"
+            or not source.selected
+            or source.status != SourceConnectionStatus.ACTIVE
+        ):
+            raise PermissionError("source_not_active_for_workspace")
+        installation = await maybe_await(
+            self.installations.get_by_id(source.oauth_installation_id)
+        )
+        if (
+            installation.workspace_id != workspace_id
+            or installation.status != OAuthInstallationStatus.ACTIVE
+        ):
+            raise PermissionError("installation_not_active_for_workspace")
+        # Verify source and installation ownership before creating a job or
+        # resolving the token, so a caller cannot probe another workspace.
+        access_token = await maybe_await(
+            self.secrets.get_token(installation.secret_ref_id)
+        )
         job = await maybe_await(
             self.backfills.create(
                 workspace_id=workspace_id, source_connection_id=source_connection_id
@@ -76,12 +97,6 @@ class SlackBackfillService:
         duplicates = 0
         latest_ts: str | None = cursor.cursor_value if cursor else None
         page_cursor: str | None = None
-        installation = await maybe_await(
-            self.installations.get_by_id(source.oauth_installation_id)
-        )
-        access_token = await maybe_await(
-            self.secrets.get_token(installation.secret_ref_id)
-        )
         try:
             while True:
                 self._enforce_provider_limit(

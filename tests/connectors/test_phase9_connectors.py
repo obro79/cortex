@@ -109,6 +109,7 @@ async def test_github_backfill_respects_selected_repo() -> None:
 
     assert result["raw_events_created"] == 1
     assert services.health("ws_1")["auth_status"] == "active"
+    assert services.health("ws_1")["live_credentials_configured"] is False
 
 
 async def test_github_webhook_verifies_signature_and_persists_json_payload() -> None:
@@ -217,6 +218,112 @@ async def test_github_webhook_rejects_when_secret_is_not_configured() -> None:
     )
 
     assert result == {"ok": False, "status": "invalid_signature"}
+
+
+async def test_github_selection_is_workspace_scoped_and_removal_blocks_webhooks() -> (
+    None
+):
+    services = GitHubConnectorServices(app_configured=True, webhook_secret="secret")
+    services.select_repos(
+        workspace_id="ws_1",
+        repos=[{"id": "44", "source_connection_id": "src_1"}],
+    )
+    cleanup_calls: list[tuple[str, str, str | None]] = []
+
+    def cleanup(workspace_id: str, repo_id: str, source_id: str | None) -> None:
+        cleanup_calls.append((workspace_id, repo_id, source_id))
+
+    services.removal_callback = cleanup
+    body = json.dumps({"repository": {"id": 44}}).encode()
+    signature = "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+
+    cross_workspace = await services.webhook(
+        workspace_id="ws_2",
+        source_connection_id="src_1",
+        body=body,
+        signature=signature,
+        event_name="push",
+        delivery_id="ws-2-delivery",
+    )
+    removed = await services.remove_repo(
+        workspace_id="ws_1", repo_id="44", source_connection_id="src_1"
+    )
+    after_removal = await services.webhook(
+        workspace_id="ws_1",
+        source_connection_id="src_1",
+        body=body,
+        signature=signature,
+        event_name="push",
+        delivery_id="removed-delivery",
+    )
+
+    assert cross_workspace["status"] == "ignored_unselected"
+    assert removed["status"] == "removed"
+    assert after_removal["status"] == "ignored_unselected"
+    assert services.health("ws_1")["selected_source_count"] == 0
+    assert cleanup_calls == [("ws_1", "44", "src_1")]
+
+
+async def test_github_live_backfill_fails_closed_without_canonical_selection() -> None:
+    services = GitHubConnectorServices(installation_token="token")
+
+    result = await services.live_backfill(
+        workspace_id="ws_1",
+        source_connection_id="src_1",
+        owner="attacker",
+        repo="other",
+    )
+
+    assert result == {"ok": False, "error": "github_source_not_selected"}
+
+
+def test_github_global_installation_token_requires_workspace_binding() -> None:
+    services = GitHubConnectorServices(installation_token="token")
+
+    result = services.select_repos(
+        workspace_id="ws_1",
+        repos=[
+            {
+                "id": "44",
+                "source_connection_id": "src_1",
+                "full_name": "acme/cortex",
+            }
+        ],
+    )
+
+    assert result == {
+        "ok": False,
+        "workspace_id": "ws_1",
+        "error": "github_installation_workspace_binding_required",
+    }
+
+
+def test_github_app_key_without_persistence_is_not_live_credentials() -> None:
+    services = GitHubConnectorServices()
+
+    result = services.install_app(
+        workspace_id="ws_1", app_id="123", private_key="not-persisted"
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "github_credential_persistence_required"
+    assert services.health("ws_1")["auth_status"] == "missing_app"
+    assert services.health("ws_1")["live_credentials_configured"] is False
+
+
+async def test_github_removal_fails_closed_without_cleanup_callback() -> None:
+    services = GitHubConnectorServices()
+    services.select_repos(
+        workspace_id="ws_1", repos=[{"id": "44", "source_connection_id": "src_1"}]
+    )
+
+    result = await services.remove_repo(
+        workspace_id="ws_1", repo_id="44", source_connection_id="src_1"
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "removal_cleanup_unavailable"
+    assert services.health("ws_1")["selected_source_count"] == 1
 
 
 async def test_repo_docs_import_hashes_and_skips_unchanged_docs() -> None:

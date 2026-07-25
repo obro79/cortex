@@ -6,7 +6,7 @@ import { FixtureDisclosure } from "./fixture-disclosure";
 
 const navItems = [
   { href: "/ui/context", label: "Context", icon: Search },
-  { href: "/ui/health", label: "Health", icon: HeartPulse },
+  { href: "/ui/health", label: "Sources / health", icon: HeartPulse },
   { href: "/ui/mcp", label: "MCP setup", icon: Braces },
 ];
 

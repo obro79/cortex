@@ -229,6 +229,22 @@ class InMemorySourceConnectionRepository:
     def get_by_id(self, source_connection_id: str) -> SourceConnection:
         return self._records[source_connection_id]
 
+    def disable_channel(
+        self, *, workspace_id: str, source_connection_id: str
+    ) -> SourceConnection:
+        record = self.get_by_id(source_connection_id)
+        if record.workspace_id != workspace_id or record.provider != "slack":
+            raise PermissionError("workspace_mismatch")
+        updated = record.model_copy(
+            update={
+                "selected": False,
+                "status": SourceConnectionStatus.DISABLED,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        self._records[source_connection_id] = updated
+        return updated
+
 
 class InMemoryWebhookDeliveryRepository:
     def __init__(self) -> None:
@@ -781,6 +797,22 @@ class SqlAlchemySourceConnectionRepository:
             record = await session.get(SourceConnectionRecord, source_connection_id)
             if record is None:
                 raise KeyError(source_connection_id)
+            return source_connection_from_record(record)
+
+    async def disable_channel(
+        self, *, workspace_id: str, source_connection_id: str
+    ) -> SourceConnection:
+        async with self.session_factory() as session:
+            record = await session.get(SourceConnectionRecord, source_connection_id)
+            if record is None:
+                raise KeyError(source_connection_id)
+            if record.workspace_id != workspace_id or record.provider != "slack":
+                raise PermissionError("workspace_mismatch")
+            record.selected = False
+            record.status = SourceConnectionStatus.DISABLED.value
+            record.updated_at = datetime.now(UTC)
+            await session.commit()
+            await session.refresh(record)
             return source_connection_from_record(record)
 
 
