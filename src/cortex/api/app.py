@@ -41,7 +41,7 @@ from cortex.observability.tracing import init_tracing
 from cortex.permissions import InMemoryProviderPrincipalMappingRepository
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
-from cortex.runtime import CortexRuntime
+from cortex.runtime import CortexRuntime, DurableContextRetrieval
 from cortex.security.audit import InMemoryAuditLogRepository
 from cortex.tenancy import InMemoryTenantRepository, SqlAlchemyTenantRepository
 from cortex.ui.source_health import SourceHealthViewService
@@ -67,6 +67,17 @@ def create_app(
         else None
     )
     app.state.session_factory = session_factory
+    if cortex_runtime is None and session_factory is not None and resolved.qdrant_url:
+        # SQL is canonical; Qdrant only supplies vector candidates.  Do not
+        # substitute the local fixture when either durable dependency is absent.
+        app.state.cortex_runtime = CortexRuntime(
+            retrieval=DurableContextRetrieval(
+                session_factory=session_factory,
+                settings=resolved,
+            ),
+            context_gate=None,
+            live_data=True,
+        )
     app.state.lifecycle_repository = InMemoryLifecycleRepository()
     app.state.provider_principal_mapping_repository = (
         InMemoryProviderPrincipalMappingRepository()

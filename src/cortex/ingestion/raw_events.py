@@ -12,7 +12,15 @@ from cortex.contracts.entities import RawEvent
 from cortex.contracts.enums import RawEventStatus
 from cortex.db.models import RawEventRecord
 
-ALLOWED_PROVIDERS = {"slack", "linear", "github", "repo_docs", "fixture"}
+ALLOWED_PROVIDERS = {
+    "slack",
+    "linear",
+    "github",
+    "repo_docs",
+    "google_drive",
+    "jira",
+    "fixture",
+}
 
 VALID_TRANSITIONS: dict[RawEventStatus, set[RawEventStatus]] = {
     RawEventStatus.RECEIVED: {RawEventStatus.PERSISTED},

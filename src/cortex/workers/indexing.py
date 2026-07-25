@@ -137,6 +137,7 @@ class IndexWorker:
             raise RuntimeError("vector_index_unready")
         if job.operation == "delete":
             await self.vector_index.delete(collection, point_id)
+            await self._verify_delivery(collection, point_id, expected_payload=None)
             return
         if job.operation not in {"upsert", "rebuild"}:
             raise ValueError("unsupported_index_operation")
@@ -161,15 +162,19 @@ class IndexWorker:
         if len(output.vector) != embedding.dimensions:
             raise ValueError("embedding_dimensions_mismatch")
         await self.vector_index.ensure_collection(collection, embedding.dimensions)
+        payload = self._payload(chunk, embedding, index_version=job.index_version)
         await self.vector_index.upsert(
             collection,
             point_id,
             output.vector,
-            self._payload(chunk, embedding),
+            payload,
         )
+        await self._verify_delivery(collection, point_id, expected_payload=payload)
 
     @staticmethod
-    def _payload(chunk: SourceChunk, embedding: EmbeddingRecord) -> dict[str, Any]:
+    def _payload(
+        chunk: SourceChunk, embedding: EmbeddingRecord, *, index_version: str
+    ) -> dict[str, Any]:
         metadata = chunk.metadata_json
         payload: dict[str, Any] = {
             "workspace_id": chunk.workspace_id,
@@ -181,6 +186,7 @@ class IndexWorker:
             "embedding_id": embedding.id,
             "embedding_model": embedding.model,
             "embedding_version": embedding.embedding_version,
+            "index_version": index_version,
             "status": str(chunk.status),
         }
         provider = metadata.get("provider")
@@ -191,7 +197,38 @@ class IndexWorker:
             source_type = metadata.get("source_kind") or metadata.get("object_type")
         if isinstance(source_type, str):
             payload["source_type"] = source_type
+        for key in (
+            "acl_revision",
+            "eligibility_revision",
+            "scope_revision",
+            "source_scope",
+        ):
+            value = metadata.get(key)
+            if isinstance(value, str):
+                payload[key] = value
+        eligible = metadata.get("source_allowlist_eligible")
+        if isinstance(eligible, bool):
+            payload["source_allowlist_eligible"] = eligible
         return payload
+
+    async def _verify_delivery(
+        self,
+        collection: str,
+        point_id: str,
+        *,
+        expected_payload: dict[str, Any] | None,
+    ) -> None:
+        """Require a read-after-write/delete observation before job completion."""
+        if self.vector_index is None:
+            raise RuntimeError("vector_index_unconfigured")
+        verifier = getattr(self.vector_index, "verify_point", None)
+        if verifier is None:
+            raise RuntimeError("vector_index_verification_unavailable")
+        verified = await maybe_await(
+            verifier(collection, point_id, expected_payload=expected_payload)
+        )
+        if verified is not True:
+            raise RuntimeError("vector_index_delivery_unverified")
 
     async def _record_failure(
         self, job: IndexJob, error: Exception
@@ -241,7 +278,9 @@ class IndexWorker:
 
     @staticmethod
     def _is_terminal(error: Exception) -> bool:
-        return isinstance(error, (PermissionError, ValueError))
+        return isinstance(error, (PermissionError, ValueError)) or str(error) in {
+            "vector_index_verification_unavailable"
+        }
 
     @staticmethod
     def _error_code(error: Exception) -> str:
@@ -254,6 +293,8 @@ class IndexWorker:
             "embedding_collection_missing",
             "embedding_not_completed",
             "unsupported_index_operation",
+            "vector_index_delivery_unverified",
+            "vector_index_verification_unavailable",
             "workspace_mismatch",
         }:
             return message

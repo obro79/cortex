@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+MAX_CURSOR_LENGTH = 2048
+
 
 def _text(value: object) -> str | None:
-    if value is None:
+    if not isinstance(value, str):
         return None
-    rendered = str(value).strip()
+    rendered = value.strip()
     return rendered or None
 
 
@@ -26,6 +28,8 @@ class JiraSnapshotPageInput:
     page_size: int = 100
 
     def __post_init__(self) -> None:
+        if any(not isinstance(project_id, str) for project_id in self.project_ids):
+            raise ValueError("jira project_ids must be non-empty and unique")
         project_ids = tuple(
             dict.fromkeys(
                 project_id.strip()
@@ -37,7 +41,11 @@ class JiraSnapshotPageInput:
             raise ValueError("jira project_ids must be non-empty and unique")
         if not 1 <= self.page_size <= 100:
             raise ValueError("jira page_size must be between 1 and 100")
-        if self.cursor is not None and not self.cursor.strip():
+        if self.cursor is not None and (
+            not isinstance(self.cursor, str)
+            or not self.cursor.strip()
+            or len(self.cursor) > MAX_CURSOR_LENGTH
+        ):
             raise ValueError("jira cursor must be non-empty when supplied")
 
 
@@ -93,8 +101,18 @@ class JiraSnapshotPage:
     next_cursor: str | None = None
 
     def __post_init__(self) -> None:
-        if self.next_cursor is not None and not self.next_cursor.strip():
+        if len(self.issues) > self.input.page_size:
+            raise ValueError("jira snapshot page exceeds requested page_size")
+        if len({issue.issue_id for issue in self.issues}) != len(self.issues):
+            raise ValueError("jira snapshot page contains duplicate issue ids")
+        if self.next_cursor is not None and (
+            not isinstance(self.next_cursor, str)
+            or not self.next_cursor.strip()
+            or len(self.next_cursor) > MAX_CURSOR_LENGTH
+        ):
             raise ValueError("jira next_cursor must be non-empty when supplied")
+        if self.next_cursor is not None and self.next_cursor == self.input.cursor:
+            raise ValueError("jira next_cursor must advance the cursor")
 
     @property
     def next_page_input(self) -> JiraSnapshotPageInput | None:

@@ -63,10 +63,13 @@ class InMemoryContextRetrievalAdapter:
         return await self._retrieval.get_related_work(**kwargs)
 
     def read_evidence_pack(self, evidence_pack_id: str) -> EvidencePack:
-        return self._retrieval.evidence.get_by_id(evidence_pack_id)
+        return cast(EvidencePack, self._retrieval.evidence.get_by_id(evidence_pack_id))
 
     def read_retrieval_request(self, retrieval_request_id: str) -> RetrievalRequest:
-        return self._retrieval.requests.get_by_id(retrieval_request_id)
+        return cast(
+            RetrievalRequest,
+            self._retrieval.requests.get_by_id(retrieval_request_id),
+        )
 
 
 @dataclass
@@ -154,20 +157,13 @@ class CortexRuntime:
             result = await result
         return result
 
-    def evidence_bootstrap(
+    async def evidence_bootstrap(
         self, *, authority: CortexAuthority, evidence_pack_id: str
     ) -> dict[str, object] | None:
         """Load an evidence pack only when it belongs to the derived workspace."""
         try:
-            evidence_pack = self._context_retrieval().read_evidence_pack(
-                evidence_pack_id
-            )
+            evidence_pack = await self.read_evidence_pack(evidence_pack_id)
         except KeyError:
-            return None
-        # This synchronous compatibility endpoint is served by the in-memory
-        # fixture. Durable adapters are supported by the async read methods
-        # used by authority-sensitive gate evaluation.
-        if isawaitable(evidence_pack):
             return None
         if getattr(evidence_pack, "workspace_id", None) != authority.workspace_id:
             return None

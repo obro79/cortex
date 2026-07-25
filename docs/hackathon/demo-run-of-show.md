@@ -11,7 +11,7 @@ deterministic synthetic-fixture demo; it is not connected to live providers.”
 | Time | Operator action | Narration |
 | --- | --- | --- |
 | 0:00–0:30 | Show the scoreboard. | “Cortex’s walkthrough has 10 synthetic records across the source shapes teams actually use; three are media files with accessibility derivatives.” |
-| 0:30–1:05 | Show architecture context. | “The product target is source-neutral ingestion into normalized evidence, then retrieval with source context.” |
+| 0:30–1:05 | Show architecture context. | “Cortex is MCP-first with a companion control plane. The durable direction keeps Postgres canonical and intends hosted Qdrant for the derived vector index; neither is claimed as deployed by this demo.” |
 | 1:05–2:10 | Ask the prepared cross-source question in the workbench. | “Instead of hunting through messages and tickets, I ask for the decision and its rationale.” |
 | 2:10–3:00 | Open the answer’s evidence rows. | “The answer is useful only if it is inspectable: source, fixture ID, excerpt, and route back to context.” |
 | 3:00–3:25 | Open a media-derived caption/transcript item. | “Media is represented with derived text so it can participate in the same evidence trail.” |

@@ -137,7 +137,7 @@ async def evidence_bootstrap(
     request: Request, evidence_pack_id: str, context: TenantDependency
 ) -> dict[str, object]:
     authority = await _authority(request, context)
-    evidence_pack = _runtime(request).evidence_bootstrap(
+    evidence_pack = await _runtime(request).evidence_bootstrap(
         authority=authority, evidence_pack_id=evidence_pack_id
     )
     if evidence_pack is None:

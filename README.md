@@ -17,6 +17,10 @@ against Slack, Google Drive, Linear, GitHub, Jira, or any external system.
 - A safe MCP handoff boundary: `create_handoff_bundle` exports an opt-in,
   portable approved-summary/evidence-reference bundle and never accesses a
   Claude session.
+- The intended product direction: Cortex is an MCP-first context service with
+  a local companion control plane. Postgres remains canonical; hosted Qdrant is
+  the intended durable vector-index target, not a deployment asserted by this
+  demo.
 
 The exact fixture inventory and its limitations are in
 [docs/hackathon/evidence-and-provenance.md](docs/hackathon/evidence-and-provenance.md).
@@ -33,8 +37,8 @@ component is live.
   inventory, boundaries, and disclosure language.
 - [Architecture plan](docs/hackathon/architecture-plan.md) and
   [100-ticket execution backlog](docs/hackathon/100-ticket-execution-backlog.md)
-  — the retained durable target, phased build order, and ten explicit cleanup
-  tickets.
+  — the current MCP/control-plane direction and a retained historical planning
+  backlog; neither is evidence of a production deployment.
 - [Architecture context](assets/hackathon/architecture-context.svg) — a visual
   of the demo’s data and evidence flow.
 - [Scoreboard](assets/hackathon/scoreboard.svg) — exact fixture counts, marked
@@ -54,7 +58,7 @@ component is live.
 ```bash
 node scripts/build_hackathon_scoreboard.mjs
 node scripts/build_hackathon_deck.mjs
-python scripts/hackathon_evidence_report.py
+uv run python scripts/hackathon_evidence_report.py
 ```
 
 The deck builder uses only Node built-ins plus the system `zip` utility and

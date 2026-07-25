@@ -4,7 +4,7 @@
 | --- | --- | --- | --- |
 | 0:00–0:08 | Cortex title and disclosure | “This is Cortex, demonstrated entirely with deterministic local fixtures.” | Deterministic fixture demo; no live providers |
 | 0:08–0:16 | Problem card | “A release decision is scattered across messages, tickets, code, and docs.” | Fixture demonstration |
-| 0:16–0:24 | COR-123 fixture bundle | “The bundle contains six local records—Slack-shaped, Linear-shaped, GitHub-shaped, and repo-doc-shaped.” | Local fixtures only |
+| 0:16–0:24 | COR-123 fixture bundle | “The bundle contains ten local records across six source shapes.” | Local fixtures only |
 | 0:24–0:32 | Pipeline stages | “Cortex runs the same trace from seed through retrieval and a context gate.” | Deterministic trace |
 | 0:32–0:40 | Evidence pack card | “It returns an evidence pack with citations and explicit source coverage.” | Fixture evidence pack |
 | 0:40–0:48 | Conflict card | “It surfaces the conflict: a stale Redis doc versus newer Postgres evidence.” | Stale evidence flagged |

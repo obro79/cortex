@@ -81,7 +81,7 @@ async def test_evidence_bootstrap_uses_typed_runtime_reader() -> None:
     )
     runtime = CortexRuntime(retrieval=TypedEvidenceRetrieval(seeded_runtime.retrieval))
 
-    evidence_pack = runtime.evidence_bootstrap(
+    evidence_pack = await runtime.evidence_bootstrap(
         authority=authority, evidence_pack_id=retrieval.evidence_pack_id
     )
 
