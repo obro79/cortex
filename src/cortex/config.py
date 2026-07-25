@@ -220,6 +220,15 @@ class Settings(BaseSettings):
     def validate_hosted_qdrant_credentials(self) -> "Settings":
         if (
             self.qdrant_url
+            and (
+                not _is_local_qdrant_url(self.qdrant_url)
+                or self.qdrant_api_key.strip()
+            )
+            and urlparse(self.qdrant_url).scheme != "https"
+        ):
+            raise ValueError("hosted QDRANT_URL and QDRANT_API_KEY require HTTPS")
+        if (
+            self.qdrant_url
             and not _is_local_qdrant_url(self.qdrant_url)
             and not self.qdrant_api_key.strip()
         ):

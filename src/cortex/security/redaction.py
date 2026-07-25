@@ -7,6 +7,7 @@ from typing import Any
 REDACTED = "[REDACTED]"
 
 SENSITIVE_KEY_PARTS = (
+    "api_key",
     "authorization",
     "cookie",
     "embedding",

@@ -15,6 +15,7 @@ from cortex.interfaces.vector_index import VectorMetadataFilter
 
 _POINT_NAMESPACE = uuid.UUID("dfe2b83e-7b79-4d30-b300-8c6e7345ee68")
 _COLLECTION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
+_LOGICAL_POINT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FORBIDDEN_PAYLOAD_KEY_PARTS = frozenset(
     {
         "bytes",
@@ -47,6 +48,7 @@ _ALLOWED_PAYLOAD_KEYS = frozenset(
         "source_chunk_id",
         "source_file_id",
         "source_object_id",
+        "source_allowlist_eligible",
         "source_scope",
         "source_type",
         "status",
@@ -84,7 +86,7 @@ class QdrantVectorIndex:
             raise ValueError("Qdrant collection dimensions must be positive")
 
         if await self._client.collection_exists(collection_name=name):
-            await self._validate_collection_dimensions(name, dimensions)
+            await self._validate_collection_schema(name, dimensions)
             return
 
         try:
@@ -100,7 +102,7 @@ class QdrantVectorIndex:
             # existence check. Re-read it before treating the failure as fatal.
             if not await self._client.collection_exists(collection_name=name):
                 raise
-        await self._validate_collection_dimensions(name, dimensions)
+        await self._validate_collection_schema(name, dimensions)
 
     async def upsert(
         self,
@@ -118,7 +120,7 @@ class QdrantVectorIndex:
             collection_name=collection,
             points=[
                 models.PointStruct(
-                    id=_qdrant_point_id(collection, point_id),
+                    id=qdrant_point_id(collection, point_id),
                     vector=vector,
                     payload=safe_payload,
                 )
@@ -132,7 +134,7 @@ class QdrantVectorIndex:
         await self._client.delete(
             collection_name=collection,
             points_selector=models.PointIdsList(
-                points=[_qdrant_point_id(collection, point_id)]
+                points=[qdrant_point_id(collection, point_id)]
             ),
             wait=True,
         )
@@ -155,15 +157,15 @@ class QdrantVectorIndex:
         if limit <= 0:
             return []
         query_filter = _build_filter(filters)
-        results = await self._client.search(
+        response = await self._client.query_points(
             collection_name=collection,
-            query_vector=vector,
+            query=vector,
             query_filter=query_filter,
             limit=limit,
             with_payload=True,
             with_vectors=False,
         )
-        return [_to_hit(result) for result in results]
+        return [_to_hit(result) for result in response.points]
 
     async def health(self) -> bool:
         try:
@@ -179,7 +181,7 @@ class QdrantVectorIndex:
             if hasattr(result, "__await__"):
                 await result
 
-    async def _validate_collection_dimensions(
+    async def _validate_collection_schema(
         self, collection: str, expected_dimensions: int
     ) -> None:
         info = await self._client.get_collection(collection_name=collection)
@@ -188,6 +190,12 @@ class QdrantVectorIndex:
             raise ValueError(
                 f"Qdrant collection {collection!r} has dimensions "
                 f"{actual_dimensions}, expected {expected_dimensions}"
+            )
+        distance = _collection_distance(info)
+        if distance is not models.Distance.COSINE:
+            raise ValueError(
+                f"Qdrant collection {collection!r} has distance {distance!s}, "
+                "expected Cosine"
             )
 
 
@@ -200,9 +208,10 @@ def validate_collection_name(name: str) -> None:
 
 
 def validate_point_id(point_id: str) -> None:
-    if not point_id or len(point_id) > 512:
+    if not _LOGICAL_POINT_ID.fullmatch(point_id):
         raise ValueError(
-            "Qdrant point_id must be a non-empty string up to 512 characters"
+            "Qdrant point_id must be a compact identifier of up to 128 letters, "
+            "numbers, '.', '_', ':', or '-'"
         )
 
 
@@ -258,13 +267,21 @@ def _build_filter(
     conditions: list[Any] = []
     for key, value in filters.items():
         validate_payload({key: value})
+        if isinstance(value, list):
+            conditions.append(
+                models.FieldCondition(key=key, match=models.MatchAny(any=value))
+            )
+            continue
         conditions.append(
             models.FieldCondition(key=key, match=models.MatchValue(value=value))
         )
     return models.Filter(must=conditions)
 
 
-def _qdrant_point_id(collection: str, point_id: str) -> str:
+def qdrant_point_id(collection: str, point_id: str) -> str:
+    """Return Qdrant's deterministic UUID for a Cortex logical point ID."""
+    validate_collection_name(collection)
+    validate_point_id(point_id)
     return str(uuid.uuid5(_POINT_NAMESPACE, f"{collection}:{point_id}"))
 
 
@@ -274,6 +291,17 @@ def _collection_dimensions(info: Any) -> int:
     if not isinstance(size, int):
         raise ValueError("Qdrant collection has an unsupported named-vector schema")
     return size
+
+
+def _collection_distance(info: Any) -> models.Distance:
+    vectors = info.config.params.vectors
+    distance = getattr(vectors, "distance", None)
+    try:
+        return models.Distance(distance)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "Qdrant collection has an unsupported distance metric"
+        ) from error
 
 
 def _to_hit(result: Any) -> dict[str, Any]:

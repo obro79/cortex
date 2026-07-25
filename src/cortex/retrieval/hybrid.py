@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from cortex.contracts.enums import SourceChunkStatus
 
 from .candidates import Candidate
+from .ranking import CandidateRanker
 
 
 class HybridCandidateFuser:
@@ -24,6 +25,8 @@ class HybridCandidateFuser:
         provider_filters: Iterable[str] = (),
         additional_candidates: Iterable[Candidate] = (),
         limit: int | None = None,
+        ranker: CandidateRanker | None = None,
+        max_per_source_object: int | None = None,
     ) -> list[Candidate]:
         allowed_providers = {
             provider.strip().lower()
@@ -46,6 +49,14 @@ class HybridCandidateFuser:
                     annotated if existing is None else self._merge(existing, annotated)
                 )
         fused = list(merged.values())
+        if limit is not None and ranker is not None:
+            if max_per_source_object is None:
+                raise ValueError(
+                    "max_per_source_object is required when limiting with a ranker"
+                )
+            return ranker.rank(
+                fused, max_per_source_object=max_per_source_object
+            )[:limit]
         fused.sort(
             key=lambda candidate: (
                 -max(

@@ -23,6 +23,7 @@ from cortex.embeddings.service import EmbeddingService
 from cortex.events.bus import PIPELINE_TOPICS, KafkaEventBus
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.indexing.publishers import IndexPublisher
+from cortex.indexing.qdrant import QdrantVectorIndex
 from cortex.indexing.repositories import SqlAlchemyIndexJobRepository
 from cortex.indexing.service import IndexJobService
 from cortex.ingestion.payloads import FilePayloadStore
@@ -227,13 +228,20 @@ def create_kafka_pipeline_consumer(
     vector_index: VectorIndex | None = None,
 ) -> KafkaPipelineConsumer:
     resolved = durable_pipeline_settings(settings)
+    resolved_vector_index = vector_index
+    if resolved_vector_index is None:
+        if not settings.qdrant_url:
+            raise ValueError(
+                "QDRANT_URL is required for the durable indexing pipeline"
+            )
+        resolved_vector_index = QdrantVectorIndex.from_settings(settings)
     event_bus = KafkaEventBus(bootstrap_servers=resolved.bootstrap_servers)
     dispatcher = SqlPipelineDispatcher(
         session_factory=session_factory,
         payload_store=FilePayloadStore(resolved.payload_store_path),
         event_bus=event_bus,
         settings=settings,
-        vector_index=vector_index,
+        vector_index=resolved_vector_index,
     )
     return KafkaPipelineConsumer(
         bootstrap_servers=resolved.bootstrap_servers,

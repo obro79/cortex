@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -10,7 +11,9 @@ from cortex.ingestion.outbox import (
     OUTBOX_PENDING,
     OUTBOX_PUBLISHED,
     InMemoryOutboxRepository,
+    OutboxMessage,
     RawEventOutboxDispatcher,
+    SqlAlchemyOutboxRepository,
 )
 from cortex.ingestion.payloads import InMemoryPayloadStore
 from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
@@ -132,3 +135,49 @@ async def test_dispatcher_reconciles_retry_then_deadletter_in_memory() -> None:
 async def test_due_requires_positive_limit() -> None:
     with pytest.raises(ValueError, match="limit"):
         await InMemoryOutboxRepository().due(limit=0)
+
+
+class SessionWithoutTransactionControl:
+    """Minimal session double that fails if an outbox method owns the boundary."""
+
+    def __init__(self) -> None:
+        self.execute = AsyncMock()
+
+    async def commit(self) -> None:
+        raise AssertionError("outbox repositories must not commit")
+
+    async def rollback(self) -> None:
+        raise AssertionError("outbox repositories must not roll back")
+
+
+async def test_sqlalchemy_repository_leaves_transaction_control_to_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = SessionWithoutTransactionControl()
+    repository = SqlAlchemyOutboxRepository(  # type: ignore[arg-type]
+        session, retry_policy=RetryPolicy(max_attempts=1)
+    )
+    pending = await InMemoryOutboxRepository().enqueue(
+        raw_event_id="raw_1", event=envelope()
+    )
+    published = OutboxMessage(
+        **{**pending.__dict__, "status": OUTBOX_PUBLISHED}
+    )
+    deadlettered = OutboxMessage(
+        **{**pending.__dict__, "status": OUTBOX_DEADLETTERED, "attempt_count": 1}
+    )
+
+    monkeypatch.setattr(repository, "_by_raw_event_id", AsyncMock(return_value=None))
+    await repository.enqueue(raw_event_id="raw_1", event=envelope())
+
+    monkeypatch.setattr(
+        repository,
+        "_require",
+        AsyncMock(side_effect=[published, pending, deadlettered]),
+    )
+    assert (await repository.mark_published("outbox_1")).status == OUTBOX_PUBLISHED
+    assert (
+        await repository.record_failure("outbox_1", RuntimeError("permanent"))
+    ).status == OUTBOX_DEADLETTERED
+
+    assert session.execute.await_count == 3

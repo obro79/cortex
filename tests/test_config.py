@@ -43,5 +43,7 @@ def test_yaml_config_file_loads_with_env_override(tmp_path, monkeypatch) -> None
 
 def test_sanitized_config_hides_sensitive_values(monkeypatch: object) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@localhost/db")
+    monkeypatch.setenv("QDRANT_API_KEY", "qdrant-secret")
     sanitized = Settings().sanitized_dict()
     assert sanitized["database_url"] == "[REDACTED]"
+    assert sanitized["qdrant_api_key"] == "[REDACTED]"

@@ -189,7 +189,13 @@ class InMemoryOutboxRepository:
 
 
 class SqlAlchemyOutboxRepository:
-    """Outbox repository bound to a caller-owned SQLAlchemy transaction."""
+    """Outbox repository bound to a caller-owned SQLAlchemy transaction.
+
+    Every method issues statements through the supplied session but deliberately
+    never commits or rolls back it.  This lets durable ingestion atomically
+    persist a raw event and its notification in one transaction; callers also
+    decide the transaction boundary for dispatcher state updates.
+    """
 
     def __init__(
         self, session: AsyncSession, retry_policy: RetryPolicy | None = None

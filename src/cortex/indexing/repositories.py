@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import IndexJob
@@ -46,8 +49,8 @@ class InMemoryIndexJobRepository:
             return IndexJobUpsertResult(self._records[existing_id], "noop")
         now = datetime.now(UTC)
         record = IndexJob(
-            id=f"idx_{target_store}_{target_type}_{target_id}_{operation}_{index_version}".replace(
-                "-", "_"
+            id=index_job_id(
+                target_store, target_type, target_id, operation, index_version
             ),
             workspace_id=workspace_id,
             target_store=target_store,
@@ -89,8 +92,10 @@ class InMemoryIndexJobRepository:
             and (target_ids is None or record.target_id in target_ids)
         ]
 
-    def mark_completed(self, index_job_id: str) -> IndexJob:
+    def mark_completed(self, index_job_id: str) -> IndexJob | None:
         current = self.get_by_id(index_job_id)
+        if current.status not in {IndexJobStatus.QUEUED, IndexJobStatus.PROCESSING}:
+            return None
         updated = current.model_copy(
             update={
                 "status": IndexJobStatus.COMPLETED,
@@ -101,22 +106,35 @@ class InMemoryIndexJobRepository:
         self._records[index_job_id] = updated
         return updated
 
-    def mark_processing(self, index_job_id: str) -> IndexJob:
+    def mark_processing(self, index_job_id: str) -> IndexJob | None:
         current = self.get_by_id(index_job_id)
+        now = datetime.now(UTC)
+        if current.status not in {
+            IndexJobStatus.QUEUED,
+            IndexJobStatus.FAILED_RETRYABLE,
+        } or (current.next_retry_at is not None and current.next_retry_at > now):
+            return None
         updated = current.model_copy(
             update={
                 "status": IndexJobStatus.PROCESSING,
-                "last_attempt_at": datetime.now(UTC),
-                "updated_at": datetime.now(UTC),
+                "last_attempt_at": now,
+                "updated_at": now,
             }
         )
         self._records[index_job_id] = updated
         return updated
 
     def mark_failed_retryable(
-        self, index_job_id: str, error_code: str, error_message: str
-    ) -> IndexJob:
+        self,
+        index_job_id: str,
+        error_code: str,
+        error_message: str,
+        *,
+        next_retry_at: datetime | None = None,
+    ) -> IndexJob | None:
         current = self.get_by_id(index_job_id)
+        if current.status != IndexJobStatus.PROCESSING:
+            return None
         updated = current.model_copy(
             update={
                 "status": IndexJobStatus.FAILED_RETRYABLE,
@@ -124,7 +142,29 @@ class InMemoryIndexJobRepository:
                 "last_attempt_at": datetime.now(UTC),
                 "last_error_code": error_code,
                 "last_error_message": error_message,
+                "next_retry_at": next_retry_at,
                 "updated_at": datetime.now(UTC),
+            }
+        )
+        self._records[index_job_id] = updated
+        return updated
+
+    def mark_failed_terminal(
+        self, index_job_id: str, error_code: str, error_message: str
+    ) -> IndexJob | None:
+        current = self.get_by_id(index_job_id)
+        if current.status != IndexJobStatus.PROCESSING:
+            return None
+        now = datetime.now(UTC)
+        updated = current.model_copy(
+            update={
+                "status": IndexJobStatus.FAILED_TERMINAL,
+                "attempt_count": current.attempt_count + 1,
+                "last_attempt_at": now,
+                "last_error_code": error_code,
+                "last_error_message": error_message,
+                "next_retry_at": None,
+                "updated_at": now,
             }
         )
         self._records[index_job_id] = updated
@@ -186,9 +226,8 @@ class SqlAlchemyIndexJobRepository:
             return IndexJobUpsertResult(index_job_from_record(existing), "noop")
         now = datetime.now(UTC)
         record = IndexJobRecord(
-            id=f"idx_{target_store}_{target_type}_{target_id}_{operation}_{index_version}".replace(
-                "-",
-                "_",
+            id=index_job_id(
+                target_store, target_type, target_id, operation, index_version
             ),
             workspace_id=workspace_id,
             target_store=target_store,
@@ -202,8 +241,25 @@ class SqlAlchemyIndexJobRepository:
             created_at=now,
             updated_at=now,
         )
-        self.session.add(record)
-        await self.session.flush()
+        try:
+            async with self.session.begin_nested():
+                self.session.add(record)
+                await self.session.flush()
+        except IntegrityError:
+            # The identity constraint is the authoritative concurrency guard.
+            # Re-read after a competing transaction wins the insert race.
+            result = await self.session.execute(
+                select(IndexJobRecord).where(
+                    IndexJobRecord.workspace_id == workspace_id,
+                    IndexJobRecord.target_store == target_store,
+                    IndexJobRecord.target_type == target_type,
+                    IndexJobRecord.target_id == target_id,
+                    IndexJobRecord.operation == operation,
+                    IndexJobRecord.index_version == index_version,
+                )
+            )
+            existing = result.scalar_one()
+            return IndexJobUpsertResult(index_job_from_record(existing), "noop")
         return IndexJobUpsertResult(index_job_from_record(record), "inserted")
 
     async def get_by_id(self, index_job_id: str) -> IndexJob:
@@ -236,42 +292,112 @@ class SqlAlchemyIndexJobRepository:
         result = await self.session.execute(statement)
         return [index_job_from_record(record) for record in result.scalars()]
 
-    async def mark_completed(self, index_job_id: str) -> IndexJob:
-        record = await self.session.get(IndexJobRecord, index_job_id)
-        if record is None:
-            raise KeyError(index_job_id)
+    async def mark_completed(self, index_job_id: str) -> IndexJob | None:
         now = datetime.now(UTC)
-        record.status = IndexJobStatus.COMPLETED.value
-        record.completed_at = now
-        record.updated_at = now
-        await self.session.flush()
+        result = await self.session.execute(
+            update(IndexJobRecord)
+            .where(
+                IndexJobRecord.id == index_job_id,
+                IndexJobRecord.status.in_(
+                    [IndexJobStatus.QUEUED.value, IndexJobStatus.PROCESSING.value]
+                ),
+            )
+            .values(
+                status=IndexJobStatus.COMPLETED.value,
+                completed_at=now,
+                updated_at=now,
+            )
+        )
+        if cast(Any, result).rowcount != 1:
+            return None
+        record = await self.session.get(IndexJobRecord, index_job_id)
+        assert record is not None
         return index_job_from_record(record)
 
-    async def mark_processing(self, index_job_id: str) -> IndexJob:
-        record = await self.session.get(IndexJobRecord, index_job_id)
-        if record is None:
-            raise KeyError(index_job_id)
+    async def mark_processing(self, index_job_id: str) -> IndexJob | None:
         now = datetime.now(UTC)
-        record.status = IndexJobStatus.PROCESSING.value
-        record.last_attempt_at = now
-        record.updated_at = now
-        await self.session.flush()
+        result = await self.session.execute(
+            update(IndexJobRecord)
+            .where(
+                IndexJobRecord.id == index_job_id,
+                IndexJobRecord.status.in_(
+                    [
+                        IndexJobStatus.QUEUED.value,
+                        IndexJobStatus.FAILED_RETRYABLE.value,
+                    ]
+                ),
+                or_(
+                    IndexJobRecord.next_retry_at.is_(None),
+                    IndexJobRecord.next_retry_at <= now,
+                ),
+            )
+            .values(
+                status=IndexJobStatus.PROCESSING.value,
+                last_attempt_at=now,
+                updated_at=now,
+            )
+        )
+        if cast(Any, result).rowcount != 1:
+            return None
+        record = await self.session.get(IndexJobRecord, index_job_id)
+        assert record is not None
         return index_job_from_record(record)
 
     async def mark_failed_retryable(
-        self, index_job_id: str, error_code: str, error_message: str
-    ) -> IndexJob:
-        record = await self.session.get(IndexJobRecord, index_job_id)
-        if record is None:
-            raise KeyError(index_job_id)
+        self,
+        index_job_id: str,
+        error_code: str,
+        error_message: str,
+        *,
+        next_retry_at: datetime | None = None,
+    ) -> IndexJob | None:
         now = datetime.now(UTC)
-        record.status = IndexJobStatus.FAILED_RETRYABLE.value
-        record.attempt_count += 1
-        record.last_attempt_at = now
-        record.last_error_code = error_code
-        record.last_error_message = error_message
-        record.updated_at = now
-        await self.session.flush()
+        result = await self.session.execute(
+            update(IndexJobRecord)
+            .where(
+                IndexJobRecord.id == index_job_id,
+                IndexJobRecord.status == IndexJobStatus.PROCESSING.value,
+            )
+            .values(
+                status=IndexJobStatus.FAILED_RETRYABLE.value,
+                attempt_count=IndexJobRecord.attempt_count + 1,
+                last_attempt_at=now,
+                last_error_code=error_code,
+                last_error_message=error_message[:1024],
+                next_retry_at=next_retry_at,
+                updated_at=now,
+            )
+        )
+        if cast(Any, result).rowcount != 1:
+            return None
+        record = await self.session.get(IndexJobRecord, index_job_id)
+        assert record is not None
+        return index_job_from_record(record)
+
+    async def mark_failed_terminal(
+        self, index_job_id: str, error_code: str, error_message: str
+    ) -> IndexJob | None:
+        now = datetime.now(UTC)
+        result = await self.session.execute(
+            update(IndexJobRecord)
+            .where(
+                IndexJobRecord.id == index_job_id,
+                IndexJobRecord.status == IndexJobStatus.PROCESSING.value,
+            )
+            .values(
+                status=IndexJobStatus.FAILED_TERMINAL.value,
+                attempt_count=IndexJobRecord.attempt_count + 1,
+                last_attempt_at=now,
+                last_error_code=error_code,
+                last_error_message=error_message[:1024],
+                next_retry_at=None,
+                updated_at=now,
+            )
+        )
+        if cast(Any, result).rowcount != 1:
+            return None
+        record = await self.session.get(IndexJobRecord, index_job_id)
+        assert record is not None
         return index_job_from_record(record)
 
     async def mark_stale_for_lifecycle(
@@ -321,3 +447,24 @@ def index_job_from_record(record: IndexJobRecord) -> IndexJob:
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
+
+
+def index_job_id(
+    target_store: str,
+    target_type: str,
+    target_id: str,
+    operation: str,
+    index_version: str,
+) -> str:
+    """Return a deterministic, SQL-safe identifier that always fits VARCHAR(128)."""
+    values = (target_store, target_type, target_id, operation, index_version)
+    readable = "_".join(values).replace("-", "_")
+    legacy = f"idx_{readable}"
+    if len(legacy) <= 128 and all(char.isalnum() or char == "_" for char in legacy):
+        return legacy
+    digest = sha256("\x1f".join(values).encode()).hexdigest()[:24]
+    prefix = "idx_" + "_".join(
+        "".join(char if char.isalnum() else "_" for char in value)[:16]
+        for value in (target_store, target_type, operation)
+    )
+    return f"{prefix}_{digest}"[:128]

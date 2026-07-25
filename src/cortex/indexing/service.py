@@ -38,7 +38,10 @@ class IndexJobService:
                 )
             ),
         )
-        if result.operation != "noop":
+        # Publishing is intentionally at-least-once. A process can commit the
+        # durable job then crash before the dispatcher delivers its buffered
+        # event; replaying the upstream event republishes this identity safely.
+        if result.record.status != "completed":
             await self.publisher.publish_requested(result.record)
         return result
 
@@ -72,14 +75,17 @@ class IndexJobService:
                 )
             ),
         )
-        if result.operation != "noop":
+        # See enqueue_for_chunk: an existing unfinished job is a recovery seam
+        # for a post-commit/pre-publish crash.
+        if result.record.status != "completed":
             await self.publisher.publish_requested(result.record)
         return result
 
-    async def complete(self, index_job_id: str) -> IndexJob:
+    async def complete(self, index_job_id: str) -> IndexJob | None:
         completed = cast(
-            IndexJob,
+            IndexJob | None,
             await maybe_await(self.repository.mark_completed(index_job_id)),
         )
-        await self.publisher.publish_completed(completed)
+        if completed is not None:
+            await self.publisher.publish_completed(completed)
         return completed

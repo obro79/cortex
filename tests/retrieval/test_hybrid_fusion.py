@@ -98,3 +98,37 @@ def test_hybrid_ranking_breaks_equal_scores_by_chunk_id(phase4_source_object) ->
     )
 
     assert [candidate.id for candidate in ranked] == ["chunk_a", "chunk_z"]
+
+
+def test_hybrid_limit_uses_weighted_ranking_and_source_diversity(
+    phase4_source_object,
+) -> None:
+    config = load_retrieval_config()
+    base = SourceAwareChunker(config.chunking).chunks_for_source_object(
+        phase4_source_object
+    )[0]
+    lexical_peak = base.model_copy(
+        update={"id": "chunk_a_lexical", "source_object_id": "source_a"}
+    )
+    vector_best = base.model_copy(
+        update={"id": "chunk_a_vector", "source_object_id": "source_a"}
+    )
+    second_source = base.model_copy(
+        update={"id": "chunk_b_vector", "source_object_id": "source_b"}
+    )
+
+    fused = HybridCandidateFuser().fuse(
+        workspace_id="ws_1",
+        lexical_candidates=[Candidate(lexical_peak, lexical_score=1.0)],
+        vector_candidates=[
+            Candidate(vector_best, vector_score=0.8),
+            Candidate(second_source, vector_score=0.7),
+        ],
+        limit=2,
+        ranker=CandidateRanker(config.ranking),
+        max_per_source_object=1,
+    )
+
+    # The raw lexical maximum is 1.0, but configured vector weighting ranks
+    # chunk_a_vector first; per-source limiting keeps the second result diverse.
+    assert [candidate.id for candidate in fused] == ["chunk_a_vector", "chunk_b_vector"]

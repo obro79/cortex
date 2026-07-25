@@ -1,0 +1,3 @@
+import { AppShell } from "@/components/layout/app-shell";
+
+export default function McpSetupPage() { return <AppShell><main className="mx-auto max-w-4xl p-6"><p className="font-mono text-xs text-muted-foreground">MCP / LOCAL SETUP</p><h1 className="mt-2 text-xl font-semibold">Use the local Cortex MCP server.</h1><div className="cortex-panel mt-6 p-4"><p className="text-sm leading-6 text-muted-foreground">This UI does not provision MCP credentials or sign users in. Configure the repository’s local MCP server using the project documentation, then send task-specific retrieval requests. The context console remains a fixture-backed preview until the durable runtime is available.</p></div></main></AppShell>; }

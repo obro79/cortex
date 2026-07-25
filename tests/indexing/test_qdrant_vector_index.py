@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from cortex.config import Settings
-from cortex.indexing.qdrant import QdrantVectorIndex
+from cortex.indexing.qdrant import QdrantVectorIndex, qdrant_point_id
 from cortex.interfaces.vector_index import FilteredVectorIndex
 
 
@@ -18,6 +18,7 @@ class FakeQdrantClient:
         self.search_calls: list[dict[str, Any]] = []
         self.deleted_ids: list[str] = []
         self.healthy = True
+        self.distance = "Cosine"
 
     async def collection_exists(self, *, collection_name: str) -> bool:
         return collection_name in self.collections
@@ -32,7 +33,9 @@ class FakeQdrantClient:
         return SimpleNamespace(
             config=SimpleNamespace(
                 params=SimpleNamespace(
-                    vectors=SimpleNamespace(size=self.collections[collection_name])
+                    vectors=SimpleNamespace(
+                        size=self.collections[collection_name], distance=self.distance
+                    )
                 )
             )
         )
@@ -47,12 +50,13 @@ class FakeQdrantClient:
             self.deleted_ids.append(str(point_id))
             self.points[kwargs["collection_name"]].pop(str(point_id), None)
 
-    async def search(self, **kwargs: Any) -> list[Any]:
+    async def query_points(self, **kwargs: Any) -> Any:
         self.search_calls.append(kwargs)
-        return [
+        points = [
             SimpleNamespace(id=point.id, payload=point.payload, score=0.91)
             for point in self.points[kwargs["collection_name"]].values()
         ][: kwargs["limit"]]
+        return SimpleNamespace(points=points)
 
     async def get_collections(self) -> Any:
         if not self.healthy:
@@ -104,6 +108,7 @@ async def test_qdrant_adapter_bootstraps_idempotently_and_uses_stable_point_ids(
         }
     ]
     assert client.search_calls[0]["query_filter"] is not None
+    assert client.search_calls[0]["query"] == [0.3, 0.4]
 
     await index.delete("cortex-test-gemini-v1-2", "embedding_chunk_1_v1")
     assert client.deleted_ids == [str(first_qdrant_id)]
@@ -137,8 +142,18 @@ async def test_qdrant_adapter_rejects_content_bearing_payloads_and_dimension_dri
             [0.1, 0.2],
             {"workspace_id": "x" * 513},
         )
+    with pytest.raises(ValueError, match="compact identifier"):
+        await index.upsert(
+            "cortex-test-gemini-v1-2",
+            "private source text must not become a stored point identifier",
+            [0.1, 0.2],
+            {"workspace_id": "ws_1"},
+        )
     with pytest.raises(ValueError, match="dimensions"):
         await index.ensure_collection("cortex-test-gemini-v1-2", 3)
+    client.distance = "Dot"
+    with pytest.raises(ValueError, match="distance"):
+        await index.ensure_collection("cortex-test-gemini-v1-2", 2)
 
 
 async def test_qdrant_health_reports_client_failures_without_raising() -> None:
@@ -150,11 +165,57 @@ async def test_qdrant_health_reports_client_failures_without_raising() -> None:
     assert await index.health() is False
 
 
+async def test_qdrant_adapter_uses_query_points_and_match_any_with_real_client(
+) -> None:
+    """Exercise the Qdrant 1.18 client surface instead of a compatibility fake."""
+    from qdrant_client import AsyncQdrantClient
+
+    client = AsyncQdrantClient(location=":memory:")
+    index = QdrantVectorIndex(client)
+    collection = "cortex-real-client"
+    await index.ensure_collection(collection, 2)
+    await index.upsert(
+        collection,
+        "emb_chunk_1_v1",
+        [0.1, 0.2],
+        {
+            "workspace_id": "ws_1",
+            "source_chunk_id": "chunk_1",
+            "provider": "slack",
+            "source_allowlist_eligible": True,
+        },
+    )
+
+    assert await index.search_filtered(
+        collection,
+        [0.1, 0.2],
+        filters={"provider": ["linear", "slack"]},
+        limit=1,
+    ) == [
+        {
+            "id": "emb_chunk_1_v1",
+            "payload": {
+                "workspace_id": "ws_1",
+                "source_chunk_id": "chunk_1",
+                "provider": "slack",
+                "source_allowlist_eligible": True,
+            },
+            "score": pytest.approx(1.0),
+        }
+    ]
+    assert qdrant_point_id(collection, "emb_chunk_1_v1") != "emb_chunk_1_v1"
+    await index.close()
+
+
 def test_hosted_qdrant_settings_require_key_and_build_valid_collection_name() -> None:
     with pytest.raises(ValueError, match="QDRANT_API_KEY"):
         Settings(qdrant_url="https://example.cloud.qdrant.io")
     with pytest.raises(ValueError, match="collection name"):
         Settings(qdrant_collection_prefix="bad prefix")
+    with pytest.raises(ValueError, match="require HTTPS"):
+        Settings(
+            qdrant_url="http://example.cloud.qdrant.io", qdrant_api_key="qdrant-secret"
+        )
 
     settings = Settings(
         cortex_env="staging",

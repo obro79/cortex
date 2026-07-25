@@ -85,6 +85,8 @@ def test_source_object_chunk_has_stable_citation_and_hash() -> None:
     assert first.chunking_version == "chunking-v1"
     assert first.citation_url == "https://fixtures.local/linear/COR-123"
     assert "COR-123" in first.text
+    assert first.metadata_json["provider"] == "linear"
+    assert first.metadata_json["source_type"] == "linear_issue"
 
 
 def test_source_file_chunker_creates_metadata_and_ocr_chunks() -> None:
@@ -109,3 +111,5 @@ def test_slack_source_object_chunk_uses_message_text_without_metadata_leak() -> 
     assert first.citation_label == "Slack thread"
     assert "retrieval_text" not in first.metadata_json
     assert "Project comet" not in str(first.metadata_json)
+    assert first.metadata_json["provider"] == "slack"
+    assert first.metadata_json["source_type"] == "slack_thread"

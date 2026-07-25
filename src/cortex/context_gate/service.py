@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any
+from inspect import isawaitable
+from typing import Any, Protocol
 
 from cortex.contracts.entities import EvidencePack, RetrievalRequest
+from cortex.permissions import ProviderAclPrincipal
 from cortex.retrieval.service import RetrievalService
 
 from .decision import GateDecisionEngine
@@ -22,6 +25,18 @@ class ContextGateServiceResponse:
     text: str
     result: dict[str, object]
     error: str | None = None
+
+
+class EvidencePackReader(Protocol):
+    """Runtime-owned evidence reads, backed by either memory or durable state."""
+
+    def read_evidence_pack(
+        self, evidence_pack_id: str
+    ) -> EvidencePack | Awaitable[EvidencePack]: ...
+
+    def read_retrieval_request(
+        self, retrieval_request_id: str
+    ) -> RetrievalRequest | Awaitable[RetrievalRequest]: ...
 
 
 class ContextGateService:
@@ -49,6 +64,8 @@ class ContextGateService:
         task_hints: dict[str, object] | None = None,
         source_allowlist: list[str] | None = None,
         provider_filters: list[str] | None = None,
+        caller_principals: list[ProviderAclPrincipal] | None = None,
+        evidence_reader: EvidencePackReader | None = None,
     ) -> ContextGateServiceResponse:
         try:
             evidence_pack, retrieval_request = await self._load_or_create_pack(
@@ -57,6 +74,8 @@ class ContextGateService:
                 evidence_pack_id=evidence_pack_id,
                 source_allowlist=source_allowlist,
                 provider_filters=provider_filters,
+                caller_principals=caller_principals,
+                evidence_reader=evidence_reader,
             )
         except KeyError:
             return ContextGateServiceResponse(
@@ -66,6 +85,18 @@ class ContextGateService:
                 text="context gate: failed (evidence pack not found)",
                 result={},
                 error="evidence_pack_not_found",
+            )
+        if (
+            evidence_pack.workspace_id != workspace_id
+            or retrieval_request.workspace_id != workspace_id
+        ):
+            return ContextGateServiceResponse(
+                ok=False,
+                context_gate_result_id=None,
+                status="failed",
+                text="context gate: failed (evidence pack workspace mismatch)",
+                result={},
+                error="workspace_scope_mismatch",
             )
 
         evaluating = self.repository.create_evaluating(
@@ -113,11 +144,16 @@ class ContextGateService:
         evidence_pack_id: str | None,
         source_allowlist: list[str] | None,
         provider_filters: list[str] | None,
+        caller_principals: list[ProviderAclPrincipal] | None,
+        evidence_reader: EvidencePackReader | None,
     ) -> tuple[EvidencePack, RetrievalRequest]:
+        reader = evidence_reader or _RetrievalServiceEvidenceReader(
+            self.retrieval_service
+        )
         if evidence_pack_id:
-            pack = self.retrieval_service.evidence.get_by_id(evidence_pack_id)
-            request = self.retrieval_service.requests.get_by_id(
-                pack.retrieval_request_id
+            pack = await self._read_evidence_pack(reader, evidence_pack_id)
+            request = await self._read_retrieval_request(
+                reader, pack.retrieval_request_id
             )
             return pack, request
         if not query:
@@ -127,14 +163,31 @@ class ContextGateService:
             query=query,
             source_allowlist=source_allowlist,
             provider_filters=provider_filters,
+            caller_principals=caller_principals,
         )
         if response.evidence_pack_id is None:
             raise KeyError("evidence_pack")
-        pack = self.retrieval_service.evidence.get_by_id(response.evidence_pack_id)
-        request = self.retrieval_service.requests.get_by_id(
-            response.retrieval_request_id
+        pack = await self._read_evidence_pack(reader, response.evidence_pack_id)
+        request = await self._read_retrieval_request(
+            reader, response.retrieval_request_id
         )
         return pack, request
+
+    async def _read_evidence_pack(
+        self, reader: EvidencePackReader, evidence_pack_id: str
+    ) -> EvidencePack:
+        result = reader.read_evidence_pack(evidence_pack_id)
+        if isawaitable(result):
+            result = await result
+        return result
+
+    async def _read_retrieval_request(
+        self, reader: EvidencePackReader, retrieval_request_id: str
+    ) -> RetrievalRequest:
+        result = reader.read_retrieval_request(retrieval_request_id)
+        if isawaitable(result):
+            result = await result
+        return result
 
     def _signal_json(self, signal: GateSignal) -> dict[str, Any]:
         return {
@@ -143,3 +196,16 @@ class ContextGateService:
             "citation_ids": list(signal.citation_ids),
             "confidence": signal.confidence,
         }
+
+
+class _RetrievalServiceEvidenceReader:
+    """Legacy adapter for direct deterministic ContextGateService fixtures."""
+
+    def __init__(self, retrieval_service: RetrievalService) -> None:
+        self._retrieval_service = retrieval_service
+
+    def read_evidence_pack(self, evidence_pack_id: str) -> EvidencePack:
+        return self._retrieval_service.evidence.get_by_id(evidence_pack_id)
+
+    def read_retrieval_request(self, retrieval_request_id: str) -> RetrievalRequest:
+        return self._retrieval_service.requests.get_by_id(retrieval_request_id)

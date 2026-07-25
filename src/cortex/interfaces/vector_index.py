@@ -1,7 +1,11 @@
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-VectorMetadataFilter = Mapping[str, str | int | bool]
+VectorMetadataScalar = str | int | bool
+VectorMetadataList = list[str] | list[int]
+VectorMetadataFilter = Mapping[
+    str, VectorMetadataScalar | VectorMetadataList
+]
 
 
 class VectorIndex(Protocol):
