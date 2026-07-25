@@ -1,10 +1,11 @@
-"""Frozen, synthetic COR-123 manifest and shared-ingestion inputs."""
+"""Deterministic, explicitly synthetic COR-123 incident corpus."""
 
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal
@@ -21,6 +22,41 @@ DEFAULT_MANIFEST_PATH = (
     / "manifest.json"
 )
 
+Provider = Literal[
+    "slack", "github", "jira", "email", "google_drive", "agent_session"
+]
+EvidenceClass = Literal[
+    "decisive",
+    "near_miss",
+    "stale_conflicting_historical",
+    "operational_coordination",
+    "unrelated",
+]
+
+PROVIDERS: tuple[Provider, ...] = (
+    "slack",
+    "github",
+    "jira",
+    "email",
+    "google_drive",
+    "agent_session",
+)
+EXPECTED_PROVIDER_COUNTS = {
+    "slack": 33,
+    "github": 32,
+    "jira": 31,
+    "email": 31,
+    "google_drive": 31,
+    "agent_session": 31,
+}
+EXPECTED_CLASS_COUNTS = {
+    "decisive": 6,
+    "near_miss": 30,
+    "stale_conflicting_historical": 42,
+    "operational_coordination": 63,
+    "unrelated": 48,
+}
+
 
 class _FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -28,12 +64,12 @@ class _FrozenModel(BaseModel):
 
 class GoldenIncidentRecord(_FrozenModel):
     fixture_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]+$")
-    provider: Literal[
-        "slack", "github", "jira", "email", "google_drive", "agent_session"
-    ]
+    provider: Provider
     mode: Literal["live", "imported_snapshot"]
     phase: Literal["pre_live", "live_transition"]
     decisive: bool
+    evidence_class: EvidenceClass
+    synthetic: Literal[True] = True
     source_type: str = Field(min_length=1, max_length=80)
     source_updated_at: datetime
     title: str = Field(min_length=1, max_length=300)
@@ -42,11 +78,15 @@ class GoldenIncidentRecord(_FrozenModel):
     is_stale: bool = False
 
     @model_validator(mode="after")
-    def phase_matches_mode(self) -> GoldenIncidentRecord:
+    def validate_record(self) -> GoldenIncidentRecord:
         if self.phase == "live_transition" and self.mode != "live":
             raise ValueError("live_transition records must use live mode")
         if self.phase == "pre_live" and self.mode != "imported_snapshot":
             raise ValueError("pre_live records must use imported_snapshot mode")
+        if self.decisive != (self.evidence_class == "decisive"):
+            raise ValueError("decisive must match evidence_class")
+        if self.evidence_class == "stale_conflicting_historical" and not self.is_stale:
+            raise ValueError("historical conflicts must be marked stale")
         return self
 
 
@@ -55,7 +95,7 @@ class GoldenIncidentManifest(_FrozenModel):
     workspace_id: Literal["ws_demo_cor_123"]
     task_ref: Literal["COR-123"]
     demo_epoch: datetime
-    records: tuple[GoldenIncidentRecord, ...] = Field(min_length=18, max_length=18)
+    records: tuple[GoldenIncidentRecord, ...] = Field(min_length=189, max_length=189)
 
     @field_validator("records")
     @classmethod
@@ -64,25 +104,28 @@ class GoldenIncidentManifest(_FrozenModel):
     ) -> tuple[GoldenIncidentRecord, ...]:
         if len({record.fixture_id for record in records}) != len(records):
             raise ValueError("fixture IDs must be unique")
+        provider_counts = Counter(record.provider for record in records)
+        if dict(provider_counts) != EXPECTED_PROVIDER_COUNTS:
+            raise ValueError("corpus provider counts do not match the golden contract")
+        class_counts = Counter(record.evidence_class for record in records)
+        if dict(class_counts) != EXPECTED_CLASS_COUNTS:
+            raise ValueError(
+                "corpus evidence-class counts do not match the golden contract"
+            )
         if sum(record.decisive for record in records) != 6:
             raise ValueError("corpus must contain exactly six decisive records")
-        if sum(not record.decisive for record in records) != 12:
-            raise ValueError("corpus must contain exactly twelve distractors")
-        if sum(record.phase == "pre_live" for record in records) != 17:
-            raise ValueError("corpus must contain exactly seventeen pre-live records")
+        decisive_provider_counts = Counter(
+            record.provider for record in records if record.decisive
+        )
+        if dict(decisive_provider_counts) != {provider: 1 for provider in PROVIDERS}:
+            raise ValueError("corpus requires exactly one decisive record per provider")
+        if sum(record.phase == "pre_live" for record in records) != 188:
+            raise ValueError("corpus must contain exactly 188 pre-live snapshots")
         live = [record for record in records if record.phase == "live_transition"]
         if len(live) != 1 or live[0].provider != "slack" or not live[0].decisive:
             raise ValueError("corpus requires one decisive live Slack transition")
-        required = {
-            "slack",
-            "github",
-            "jira",
-            "email",
-            "google_drive",
-            "agent_session",
-        }
-        if {record.provider for record in records} != required:
-            raise ValueError("corpus provider coverage is incomplete")
+        if not all(record.synthetic for record in records):
+            raise ValueError("golden incident records must be explicitly synthetic")
         return records
 
     @property
@@ -113,6 +156,7 @@ class GoldenIncidentManifest(_FrozenModel):
                 else record.mode
             ),
             "decisive": record.decisive,
+            "evidence_class": record.evidence_class,
             "source_type": record.source_type,
             "source_updated_at": record.source_updated_at.isoformat(),
             "title": record.title,
@@ -120,6 +164,7 @@ class GoldenIncidentManifest(_FrozenModel):
             "content": record.content,
             "is_stale": record.is_stale,
             "synthetic_demo": True,
+            "synthetic": record.synthetic,
             "manifest_sha256": self.sha256,
         }
         return RawEventInput(
@@ -154,19 +199,114 @@ class GoldenIncidentExpectedCounts:
     pre_live: int
     live_transition: int
     providers: int
+    near_miss: int
+    stale_conflicting_historical: int
+    operational_coordination: int
+    unrelated: int
+
+
+def _source_type(provider: Provider) -> str:
+    return {
+        "slack": "message",
+        "github": "issue",
+        "jira": "issue",
+        "email": "message",
+        "google_drive": "document",
+        "agent_session": "checkpoint",
+    }[provider]
+
+
+def _generated_record(
+    provider: Provider, evidence_class: EvidenceClass, ordinal: int, epoch: datetime
+) -> GoldenIncidentRecord:
+    label = provider.replace("_", " ").title()
+    topic = {
+        "near_miss": (
+            "a superficially similar cache symptom that does not affect session reads"
+        ),
+        "stale_conflicting_historical": (
+            "superseded historical guidance that conflicts with the current "
+            "Postgres rollout"
+        ),
+        "operational_coordination": (
+            "incident coordination, ownership, or verification planning"
+        ),
+        "unrelated": "an unrelated maintenance or product-work item",
+    }[evidence_class]
+    updated_at = epoch - timedelta(minutes=10 + ordinal)
+    if evidence_class == "stale_conflicting_historical":
+        updated_at = epoch - timedelta(days=30 + ordinal)
+    return GoldenIncidentRecord(
+        fixture_id=(
+            f"{provider.replace('_', '-')}-"
+            f"{evidence_class.replace('_', '-')}-{ordinal:02d}"
+        ),
+        provider=provider,
+        mode="imported_snapshot",
+        phase="pre_live",
+        decisive=False,
+        evidence_class=evidence_class,
+        synthetic=True,
+        source_type=_source_type(provider),
+        source_updated_at=updated_at,
+        title=f"Synthetic {label} {evidence_class.replace('_', ' ')} {ordinal:02d}",
+        citation_label=f"Synthetic {label} fixture {ordinal:02d}",
+        content=(
+            f"Synthetic COR-123 fixture {ordinal:02d} from {label}: {topic}. "
+            "It is deterministic test data and does not represent live provider data."
+        ),
+        is_stale=evidence_class == "stale_conflicting_historical",
+    )
+
+
+def _generate_records(
+    seed_records: tuple[GoldenIncidentRecord, ...], demo_epoch: datetime
+) -> tuple[GoldenIncidentRecord, ...]:
+    """Expand six inspectable decisive anchors into the fixed 189-record corpus."""
+    generated: list[GoldenIncidentRecord] = list(seed_records)
+    allocations: dict[EvidenceClass, dict[Provider, int]] = {
+        "stale_conflicting_historical": {provider: 7 for provider in PROVIDERS},
+        "operational_coordination": {
+            "slack": 12,
+            "github": 11,
+            "jira": 10,
+            "email": 10,
+            "google_drive": 10,
+            "agent_session": 10,
+        },
+        "unrelated": {provider: 8 for provider in PROVIDERS},
+        "near_miss": {provider: 5 for provider in PROVIDERS},
+    }
+    for evidence_class, provider_allocations in allocations.items():
+        for provider in PROVIDERS:
+            generated.extend(
+                _generated_record(provider, evidence_class, ordinal, demo_epoch)
+                for ordinal in range(1, provider_allocations[provider] + 1)
+            )
+    return tuple(generated)
 
 
 def load_golden_incident_manifest(
     path: Path = DEFAULT_MANIFEST_PATH,
 ) -> GoldenIncidentManifest:
+    """Load six inspectable anchors and deterministically expand the corpus."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    seed_records = tuple(
+        GoldenIncidentRecord.model_validate(item) for item in payload.pop("records")
+    )
+    payload.pop("generator", None)
+    if len(seed_records) != 6:
+        raise ValueError(
+            "golden incident fixture must define exactly six decisive anchors"
+        )
+    demo_epoch = datetime.fromisoformat(payload["demo_epoch"].replace("Z", "+00:00"))
     return GoldenIncidentManifest.model_validate(
-        json.loads(path.read_text(encoding="utf-8"))
+        {**payload, "records": _generate_records(seed_records, demo_epoch)}
     )
 
 
-def expected_counts(
-    manifest: GoldenIncidentManifest,
-) -> GoldenIncidentExpectedCounts:
+def expected_counts(manifest: GoldenIncidentManifest) -> GoldenIncidentExpectedCounts:
+    classes = Counter(record.evidence_class for record in manifest.records)
     return GoldenIncidentExpectedCounts(
         records=len(manifest.records),
         decisive=sum(record.decisive for record in manifest.records),
@@ -174,4 +314,8 @@ def expected_counts(
         pre_live=len(manifest.pre_live_records),
         live_transition=1,
         providers=len({record.provider for record in manifest.records}),
+        near_miss=classes["near_miss"],
+        stale_conflicting_historical=classes["stale_conflicting_historical"],
+        operational_coordination=classes["operational_coordination"],
+        unrelated=classes["unrelated"],
     )

@@ -34,8 +34,9 @@ the parent document controls the overall demo thesis.
   Claude Code without a manual handoff document.
 - Runtime: Compose Postgres plus local Qdrant first; the same operator contract
   must work with hosted Qdrant.
-- Corpus: 18 records total, containing six decisive items and twelve realistic
-  distractors or stale updates.
+- Corpus: 189 records total, containing six decisive items, 30 near-misses,
+  42 stale/conflicting historical records, 63 operational records, and 48
+  unrelated records.
 - Ingestion: every source enters through the shared raw-event pipeline; no
   direct SQL fixture insertion.
 - Freshness proof: a signed Slack event changes the second evidence pack.

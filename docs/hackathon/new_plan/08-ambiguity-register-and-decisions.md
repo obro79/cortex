@@ -27,9 +27,9 @@
 
 | ID | Status | Ambiguity | Decision/default | Verification |
 | --- | --- | --- | --- | --- |
-| B-01 | LOCKED | What are the exact 18 records? | `fixtures/golden_incident/manifest.json`: six decisive, twelve distractors, seventeen pre-live, one live Slack transition. | Validated manifest checksum. |
+| B-01 | LOCKED | What are the exact 189 records? | `fixtures/golden_incident/manifest.json`: six decisive, 30 near-misses, 42 stale/conflicting historical, 63 operational, 48 unrelated; 188 pre-live and one live Slack transition. | Validated manifest checksum. |
 | B-02 | LOCKED | May fixtures insert into SQL? | No; all use `RawEventInput` and the shared pipeline. | Lineage test. |
-| B-03 | DEFAULTED | How is the live transition counted? | Preparation yields 17 records; signed Slack yields the decisive 18th. | Pre/post reports. |
+| B-03 | DEFAULTED | How is the live transition counted? | Preparation yields 188 records; signed Slack yields the decisive 189th. | Pre/post reports. |
 | B-04 | DEFAULTED | How is `COR-123` attached? | Explicit fixture metadata plus normal entity extraction. | Normalization assertion. |
 | B-05 | DEFAULTED | Which timestamps? | Fixed UTC times relative to a frozen demo epoch. | Repeatable seed test. |
 | B-06 | DEFAULTED | What is email? | Generic normalized snapshot, not a live Gmail/Outlook claim. | Adapter fixture. |

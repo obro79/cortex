@@ -21,13 +21,14 @@ GIP-016 + GIP-018 ─> GIP-019 ─> GIP-020
 
 ### GIP-001 — Freeze the incident manifest
 
-**Deliverable:** Versioned manifest containing 18 records, stable IDs, source
+**Deliverable:** Versioned manifest containing 189 records, stable IDs, source
 modes, timestamps, relationships, decisive/distractor labels, and expected
 citations.
 
 **Acceptance:**
 
-- exactly six decisive and twelve distractor records;
+- exactly six decisive records, 30 near-misses, 42 stale/conflicting records,
+  63 operational records, and 48 unrelated records;
 - exactly six displayed source types;
 - no real customer or credential data;
 - stable content hashes across repeated loads.

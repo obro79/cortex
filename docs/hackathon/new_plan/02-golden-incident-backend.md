@@ -4,8 +4,9 @@
 
 Deliver one deterministic, permission-scoped COR-123 corpus that establishes
 the demo diagnosis without fabricating a live integration. The corpus has
-exactly **18 source records**: six decisive records (one from each source) and
-12 clearly non-decisive distractors. GitHub, Jira, email, Drive/docs, and the
+exactly **189 source records**: six decisive records (one from each source),
+30 near-misses, 42 stale or conflicting historical records, 63 operational or
+coordination records, and 48 unrelated workspace items. GitHub, Jira, email, Drive/docs, and the
 agent checkpoint are `imported_snapshot`; Slack is `live` only after its signed
 webhook is accepted. A small Python incident-service fixture supplies the
 middleware file and focused test named by the evidence.
@@ -135,9 +136,9 @@ it does not grade hidden chain-of-thought or accept prose without citations.
 
 ## Tickets
 
-1. **COR-BE-201 — Manifest and fixture package.** Add the 18-record manifest,
+1. **COR-BE-201 — Manifest and fixture package.** Add the 189-record manifest,
    deterministic timestamps/IDs, synthetic Python incident service, and exact
-   six decisive/12 distractor classification.
+   evidence-class classification.
 2. **COR-BE-202 — Canonical snapshot importer.** Map each snapshot record,
    including safe checkpoint export, to `RawEventInput`; add an offline-email
    snapshot normalizer/adapter only when needed and register it.
@@ -152,7 +153,8 @@ it does not grade hidden chain-of-thought or accept prose without citations.
 
 ## Validation and acceptance
 
-- Unit-test manifest schema/count (exactly 18, 6+12), IDs, timestamp ordering,
+- Unit-test manifest schema/count (exactly 189, 6 decisive, 30 near-misses,
+  42 stale/conflicting historical, 63 coordination, and 48 unrelated), IDs, timestamp ordering,
   source modes, relationship roles, and fixture path/test existence.
 - Integration-test each imported record through `RawEventInput` and all
   canonical stages; assert expected source objects, chunks, embedding records,
@@ -165,9 +167,9 @@ it does not grade hidden chain-of-thought or accept prose without citations.
 - Test the evidence evaluator both before Slack (partial/missing-live expected)
   and after signed Slack completion (six-source pass).
 
-Acceptance is met when one idempotent seed produces the 17 available snapshot
-records (including the checkpoint and distractors), then a valid Slack event
-produces the 18th record and a graph node within the agreed end-to-end target;
+Acceptance is met when one idempotent seed produces the 188 available snapshot
+records (including the checkpoint and non-decisive evidence), then a valid Slack event
+produces the 189th record and a graph node within the agreed end-to-end target;
 the six-source evidence contract passes with inspectable citations and no
 forbidden material.
 

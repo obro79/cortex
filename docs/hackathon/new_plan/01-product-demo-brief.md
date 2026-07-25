@@ -61,9 +61,10 @@ Within three minutes, the judge should understand:
 | Claude Code | Imported structured checkpoint | Developer A identifies the fallback path and next test. |
 | Slack | Live synthetic message | The newest update confirms the affected pods still use the fallback. |
 
-Twelve additional records provide realistic noise: unrelated session work,
-older resolved incidents, superseded comments, rollout coordination, and
-lexically similar but irrelevant authentication material.
+The other 183 records provide realistic retrieval pressure: 30 lexically
+similar near-misses, 42 stale or conflicting historical records, 63 rollout
+and operational updates, and 48 unrelated workspace items. Every record is
+explicitly synthetic and deterministic.
 
 ## Three-minute performance
 
