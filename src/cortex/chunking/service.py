@@ -42,6 +42,8 @@ class ChunkingService:
         source_object = await maybe_await(
             self.source_objects.get_by_id(envelope.subject.id)
         )
+        if source_object.workspace_id != envelope.workspace_id:
+            return ChunkingServiceResult("ignored", reason="workspace_mismatch")
         chunks = self.chunker.chunks_for_source_object(source_object)
         upserts = await maybe_await(self.source_chunks.upsert_many(chunks))
         await maybe_await(
@@ -73,9 +75,13 @@ class ChunkingService:
         )
         if source_file.source_object_id is None:
             return ChunkingServiceResult("ignored", reason="missing_source_object")
+        if source_file.workspace_id != envelope.workspace_id:
+            return ChunkingServiceResult("ignored", reason="workspace_mismatch")
         source_object = await maybe_await(
             self.source_objects.get_by_id(source_file.source_object_id)
         )
+        if source_object.workspace_id != envelope.workspace_id:
+            return ChunkingServiceResult("ignored", reason="workspace_mismatch")
         upserts = await maybe_await(
             self.source_chunks.upsert_many(
                 self.chunker.chunks_for_source_file(source_object, source_file)

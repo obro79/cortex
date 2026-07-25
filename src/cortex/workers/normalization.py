@@ -47,6 +47,12 @@ class NormalizationWorkerSkeleton:
             raw_event = self.repository.get_by_id(envelope.subject.id)
         except RawEventNotFoundError:
             return {"status": "retryable", "reason": "raw_event_not_found"}
+        if raw_event.workspace_id != envelope.workspace_id:
+            return {
+                "status": "ignored",
+                "raw_event_id": raw_event.id,
+                "reason": "workspace_mismatch",
+            }
 
         try:
             self.repository.mark_processing(raw_event.id)

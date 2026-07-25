@@ -16,7 +16,13 @@ class EmbeddingWorkerSkeleton:
         if envelope.subject.type != "source_chunk":
             return {"status": "ignored", "reason": "unsupported_subject"}
 
-        result = await self.embedding_service.queue_for_chunk(envelope.subject.id)
+        try:
+            result = await self.embedding_service.queue_for_chunk(
+                envelope.subject.id,
+                workspace_id=envelope.workspace_id,
+            )
+        except PermissionError:
+            return {"status": "ignored", "reason": "workspace_mismatch"}
         return {
             "status": "queued",
             "embedding_id": result.record.id,
@@ -31,7 +37,13 @@ class EmbeddingWorkerSkeleton:
         if envelope.subject.type != "embedding_record":
             return {"status": "ignored", "reason": "unsupported_subject"}
 
-        record = await self.embedding_service.complete(envelope.subject.id)
+        try:
+            record = await self.embedding_service.complete(
+                envelope.subject.id,
+                workspace_id=envelope.workspace_id,
+            )
+        except PermissionError:
+            return {"status": "ignored", "reason": "workspace_mismatch"}
         return {
             "status": "completed",
             "embedding_id": record.id,

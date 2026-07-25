@@ -42,6 +42,34 @@ async def test_embedding_worker_queues_and_completes_source_chunk(
     ]
 
 
+async def test_embedding_worker_ignores_cross_workspace_chunk(
+    phase4_source_object: SourceObject,
+) -> None:
+    source_chunks = InMemorySourceChunkRepository()
+    chunk = SourceAwareChunker(
+        load_retrieval_config().chunking
+    ).chunks_for_source_object(phase4_source_object)[0]
+    source_chunks.upsert_many([chunk])
+    event_bus = InMemoryEventBus()
+    service = EmbeddingService(
+        source_chunks=source_chunks,
+        embeddings=InMemoryEmbeddingRecordRepository(),
+        provider=DeterministicEmbeddingProvider(dimensions=8, version="emb-v1"),
+        publisher=EmbeddingPublisher(event_bus),
+    )
+    worker = EmbeddingWorkerSkeleton(service)
+    chunk_event = await _publish_chunk_event(chunk, event_bus)
+
+    result = await worker.handle_source_chunk_upserted(
+        chunk_event.model_copy(update={"workspace_id": "ws_other"})
+    )
+
+    assert result == {"status": "ignored", "reason": "workspace_mismatch"}
+    assert [event.event_type for event in event_bus.list_events()] == [
+        "source_chunk.upserted"
+    ]
+
+
 async def _publish_chunk_event(chunk, event_bus: InMemoryEventBus):
     from cortex.chunking.publishers import SourceChunkPublisher
 

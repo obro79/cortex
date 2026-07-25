@@ -9,6 +9,7 @@ from cortex.api.routes.health import router as health_router
 from cortex.api.routes.linear import router as linear_router
 from cortex.api.routes.repo_docs import router as repo_docs_router
 from cortex.api.routes.slack import router as slack_router
+from cortex.api.routes.ui import router as ui_router
 from cortex.config import Settings, get_settings
 from cortex.connectors.github.client import RealGitHubClient
 from cortex.connectors.github.service import GitHubConnectorServices
@@ -25,6 +26,9 @@ from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
 from cortex.platform import EphemeralCacheService, build_ephemeral_cache
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
+from cortex.security.audit import InMemoryAuditLogRepository
+from cortex.tenancy import InMemoryTenantRepository
+from cortex.ui.source_health import SourceHealthViewService
 
 
 def create_app(
@@ -38,6 +42,8 @@ def create_app(
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    if resolved.cortex_public_auth_enabled:
+        app.state.tenant_repository = InMemoryTenantRepository()
     cache = ephemeral_cache
     if cache is None and (
         resolved.cortex_api_rate_limit_enabled
@@ -77,6 +83,8 @@ def create_app(
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
         app.include_router(dev_router)
+    if resolved.cortex_ui_enabled:
+        app.state.audit_log = InMemoryAuditLogRepository()
     event_bus: EventBus | None = None
     payload_store: PayloadStore | None = None
     ingestion_service: Any | None = None
@@ -164,6 +172,11 @@ def create_app(
             repo_docs_kwargs["ingestion"] = ingestion_service
         app.state.repo_docs_connector = RepoDocsConnectorServices(**repo_docs_kwargs)
         app.include_router(repo_docs_router)
+    if resolved.cortex_ui_enabled:
+        app.state.source_health_view = SourceHealthViewService(
+            slack_connector=getattr(app.state, "slack_connector", None)
+        )
+        app.include_router(ui_router)
     return app
 
 

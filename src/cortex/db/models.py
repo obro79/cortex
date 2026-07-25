@@ -26,6 +26,175 @@ class HealthCheck(Base):
     )
 
 
+class OrganizationRecord(Base):
+    __tablename__ = "organizations"
+    __table_args__ = (
+        Index("ix_organizations_status", "status"),
+        Index("ix_organizations_created_by", "created_by_user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class WorkspaceRecord(Base):
+    __tablename__ = "workspaces"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "slug", name="uq_workspaces_org_slug"),
+        Index("ix_workspaces_organization_status", "organization_id", "status"),
+        Index("ix_workspaces_created_by", "created_by_user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class UserRecord(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint(
+            "auth_provider", "auth_subject", name="uq_users_auth_provider_subject"
+        ),
+        UniqueConstraint("email", name="uq_users_email"),
+        Index("ix_users_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    auth_provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    auth_subject: Mapped[str] = mapped_column(String(256), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class MembershipRecord(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "user_id",
+            name="uq_memberships_scope_user",
+        ),
+        Index("ix_memberships_user_status", "user_id", "status"),
+        Index("ix_memberships_workspace_role", "workspace_id", "role"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    invited_by_user_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class InvitationRecord(Base):
+    __tablename__ = "invitations"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_invitations_token_hash"),
+        Index("ix_invitations_workspace_status", "workspace_id", "status"),
+        Index("ix_invitations_email_status", "email", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    invited_by_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    accepted_by_user_id: Mapped[str | None] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class LegalConsentRecord(Base):
+    __tablename__ = "legal_consents"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "consent_type", "version", name="uq_legal_consents_user_version"
+        ),
+        Index("ix_legal_consents_workspace_user", "workspace_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str | None] = mapped_column(String(128))
+    workspace_id: Mapped[str | None] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consent_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[str] = mapped_column(String(128), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class RawEventRecord(Base):
     __tablename__ = "raw_events"
     __table_args__ = (

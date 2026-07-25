@@ -33,8 +33,12 @@ class EmbeddingService:
         self.model_rate_limiter = model_rate_limiter
         self.model_rate_limit_policy = model_rate_limit_policy
 
-    async def queue_for_chunk(self, source_chunk_id: str) -> EmbeddingUpsertResult:
+    async def queue_for_chunk(
+        self, source_chunk_id: str, *, workspace_id: str | None = None
+    ) -> EmbeddingUpsertResult:
         chunk = await maybe_await(self.source_chunks.get_by_id(source_chunk_id))
+        if workspace_id is not None and chunk.workspace_id != workspace_id:
+            raise PermissionError("workspace_mismatch")
         result = cast(
             EmbeddingUpsertResult,
             await maybe_await(
@@ -55,8 +59,12 @@ class EmbeddingService:
             await self.publisher.publish_requested(result.record)
         return result
 
-    async def complete(self, embedding_id: str) -> EmbeddingRecord:
+    async def complete(
+        self, embedding_id: str, *, workspace_id: str | None = None
+    ) -> EmbeddingRecord:
         record = await maybe_await(self.embeddings.get_by_id(embedding_id))
+        if workspace_id is not None and record.workspace_id != workspace_id:
+            raise PermissionError("workspace_mismatch")
         if self.model_rate_limiter and self.model_rate_limit_policy:
             self.model_rate_limiter.enforce(
                 self.model_rate_limit_policy,
@@ -67,6 +75,8 @@ class EmbeddingService:
                 ),
             )
         chunk = await maybe_await(self.source_chunks.get_by_id(record.source_chunk_id))
+        if chunk.workspace_id != record.workspace_id:
+            raise PermissionError("workspace_mismatch")
         output = await maybe_await(
             self.provider.embed(record.input_text_hash, chunk.text)
         )

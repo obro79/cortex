@@ -200,6 +200,24 @@ async def test_invalid_payload_marks_retryable_then_deadlettered() -> None:
     assert raw_events.get_by_id("raw_linear_1").status == RawEventStatus.DEADLETTERED
 
 
+async def test_normalization_service_ignores_cross_workspace_envelope() -> None:
+    raw_events = InMemoryRawEventRepository()
+    payload_store = InMemoryPayloadStore()
+    event_bus = InMemoryEventBus()
+    raw_envelope = await create_raw_event(raw_events, payload_store, event_bus)
+    normalization, _source_objects, _source_files, _relationship_seeds = service(
+        raw_events, payload_store, event_bus
+    )
+
+    result = await normalization.handle_raw_event_persisted(
+        raw_envelope.model_copy(update={"workspace_id": "ws_other"})
+    )
+
+    assert result.status == "ignored"
+    assert result.reason == "workspace_mismatch"
+    assert raw_events.get_by_id("raw_linear_1").status == RawEventStatus.PUBLISHED
+
+
 async def test_publish_failure_retries_existing_durable_records() -> None:
     class FailingBus:
         async def publish(self, _event: object) -> None:

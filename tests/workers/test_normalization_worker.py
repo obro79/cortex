@@ -82,3 +82,22 @@ async def test_normalization_worker_ignores_unsupported_events() -> None:
     ).handle_raw_event_persisted(ignored)
 
     assert result == {"status": "ignored", "reason": "unsupported_event_type"}
+
+
+async def test_normalization_worker_ignores_cross_workspace_raw_event() -> None:
+    repository = InMemoryRawEventRepository()
+    payload_store = InMemoryPayloadStore()
+    event_bus = InMemoryEventBus()
+    envelope = await persisted_envelope(repository, payload_store, event_bus)
+    mismatched = envelope.model_copy(update={"workspace_id": "ws_other"})
+
+    result = await NormalizationWorkerSkeleton(
+        repository, payload_store
+    ).handle_raw_event_persisted(mismatched)
+
+    assert result == {
+        "status": "ignored",
+        "raw_event_id": "raw_fixture_1",
+        "reason": "workspace_mismatch",
+    }
+    assert repository.get_by_id("raw_fixture_1").status == RawEventStatus.PUBLISHED
