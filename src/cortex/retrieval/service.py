@@ -9,6 +9,7 @@ from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
 from cortex.indexing.vector_memory import InMemoryVectorIndex
 from cortex.normalization.repositories import InMemoryRelationshipSeedRepository
+from cortex.permissions.service import PermissionService
 
 from .candidates import Candidate
 from .evidence import EvidencePackBuilder
@@ -47,6 +48,7 @@ class RetrievalService:
         publisher: EvidencePackPublisher,
         canonical_decisions: InMemoryCanonicalDecisionRepository | None = None,
         relationship_seeds: InMemoryRelationshipSeedRepository | None = None,
+        permission_service: PermissionService | None = None,
     ) -> None:
         self.config = config
         self.source_chunks = source_chunks
@@ -65,7 +67,7 @@ class RetrievalService:
         self.canonical_decisions = canonical_decisions
         self.relationship_seeds = relationship_seeds
         self.canonical_adapter = CanonicalDecisionCandidateAdapter()
-        self.permissions = PermissionFilter()
+        self.permission_service = permission_service
         self.builder = EvidencePackBuilder()
         self.ranker = CandidateRanker(config.ranking)
 
@@ -125,9 +127,12 @@ class RetrievalService:
             )
         candidates.extend(self._hint_candidates(workspace_id, plan))
 
-        allowed, exclusions = self.permissions.filter(candidates, plan)
+        permission_filter = PermissionFilter(
+            workspace_id=workspace_id, service=self.permission_service
+        )
+        allowed, exclusions = permission_filter.filter(candidates, plan)
         expanded = self._expand_relationships(workspace_id, allowed)
-        allowed, expansion_exclusions = self.permissions.filter(expanded, plan)
+        allowed, expansion_exclusions = permission_filter.filter(expanded, plan)
         exclusions = self._merge_exclusions(exclusions, expansion_exclusions)
         ranked = self.ranker.rank(
             allowed,

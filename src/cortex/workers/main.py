@@ -9,21 +9,53 @@ from cortex.events.kafka_admin import ensure_pipeline_topics
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
 from cortex.workers.factory import create_kafka_pipeline_consumer, pipeline_topics
+from cortex.workers.heartbeat import (
+    InMemoryWorkerHeartbeatRepository,
+    default_worker_instance_id,
+)
 
 app = typer.Typer(help="Cortex worker entrypoint")
 
 
-async def run_worker(role: str, settings: Settings | None = None) -> int:
+async def run_worker(
+    role: str,
+    settings: Settings | None = None,
+    heartbeat_repository: InMemoryWorkerHeartbeatRepository | None = None,
+    instance_id: str | None = None,
+) -> int:
     resolved = settings or Settings()
     setup_logging(resolved.cortex_log_level)
     init_tracing(f"cortex-worker-{role}")
+    worker_instance_id = instance_id or default_worker_instance_id(role)
     if role == "noop":
+        if heartbeat_repository is not None:
+            heartbeat_repository.record(
+                role=role, instance_id=worker_instance_id, status="ready"
+            )
         return 0
     if role == "pipeline":
         if resolved.cortex_event_bus != "kafka":
+            if heartbeat_repository is not None:
+                heartbeat_repository.record(
+                    role=role,
+                    instance_id=worker_instance_id,
+                    status="not_ready",
+                    failure_reason="pipeline role requires CORTEX_EVENT_BUS=kafka",
+                )
             raise typer.BadParameter("pipeline role requires CORTEX_EVENT_BUS=kafka")
         if resolved.cortex_state_backend != "sql":
+            if heartbeat_repository is not None:
+                heartbeat_repository.record(
+                    role=role,
+                    instance_id=worker_instance_id,
+                    status="not_ready",
+                    failure_reason="pipeline role requires CORTEX_STATE_BACKEND=sql",
+                )
             raise typer.BadParameter("pipeline role requires CORTEX_STATE_BACKEND=sql")
+        if heartbeat_repository is not None:
+            heartbeat_repository.record(
+                role=role, instance_id=worker_instance_id, status="starting"
+            )
         await ensure_pipeline_topics(
             bootstrap_servers=resolved.kafka_bootstrap_servers,
         )
