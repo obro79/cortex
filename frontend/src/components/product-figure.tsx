@@ -28,7 +28,7 @@ export function SourcePill({
   const tones = {
     default: "border-cortex-border text-cortex-muted",
     green: "border-cortex-green/40 text-cortex-green",
-    amber: "border-cortex-amber/50 text-cortex-amber",
+    amber: "border-warning/50 text-warning-foreground",
     blue: "border-cortex-blue/40 text-cortex-blue",
   };
 

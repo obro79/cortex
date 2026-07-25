@@ -80,7 +80,26 @@ docker compose config
 Run the normal API locally:
 
 ```bash
-uvicorn cortex.api.app:create_app --factory --reload
+uv sync --extra dev
+python3 scripts/local_runtime_preflight.py --backend
+.venv/bin/uvicorn cortex.api.app:create_app --factory --reload
+```
+
+### Local runtime health
+
+Before either server starts, Cortex checks that its installed Python and Next.js
+files can actually be read. This avoids opaque hangs when macOS Files On-Demand
+has offloaded dependency files under `.venv` or `frontend/node_modules`.
+
+```bash
+python3 scripts/local_runtime_preflight.py
+```
+
+If it fails, rebuild the local dependencies with the commands it prints:
+
+```bash
+uv sync --extra dev --reinstall
+(cd frontend && npm ci)
 ```
 
 ### Launch the local hackathon demo

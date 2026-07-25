@@ -46,6 +46,10 @@ const config: Config = {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",
         },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
         ring: "hsl(var(--ring))",
         cortex: {
           bg: "#080a0f",
@@ -54,7 +58,8 @@ const config: Config = {
           ink: "#f7f8fb",
           muted: "#9ba4b5",
           green: "#75d6a3",
-          amber: "#f0c36a",
+          amber: "#D7B377",
+          bronze: "#8F754F",
           blue: "#89b4ff",
         },
       },
