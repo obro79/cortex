@@ -23,6 +23,7 @@ class EmbeddingService:
         embeddings: Any,
         provider: EmbeddingProvider,
         publisher: EmbeddingPublisher,
+        vector_collection: str | None = None,
         model_rate_limiter: RateLimitService | None = None,
         model_rate_limit_policy: RateLimitPolicy | None = None,
     ) -> None:
@@ -30,6 +31,12 @@ class EmbeddingService:
         self.embeddings = embeddings
         self.provider = provider
         self.publisher = publisher
+        # Durable callers must pass their shared profile collection.  The
+        # deterministic provider is fixture-only and retains the historical
+        # explicit fixture collection for local tests/dev workbench adapters.
+        if vector_collection is None and provider.provider_name != "deterministic":
+            raise ValueError("vector_collection is required for non-fixture embeddings")
+        self.vector_collection = vector_collection or "fixture-cortex-dev"
         self.model_rate_limiter = model_rate_limiter
         self.model_rate_limit_policy = model_rate_limit_policy
 
@@ -86,7 +93,7 @@ class EmbeddingService:
                 self.embeddings.mark_completed(
                     embedding_id,
                     vector_hash=output.vector_hash,
-                    collection="fixture-cortex-dev",
+                    collection=self.vector_collection,
                 )
             ),
         )

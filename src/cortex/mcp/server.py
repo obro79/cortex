@@ -1,8 +1,9 @@
 import asyncio
 import json
+import os
 import sys
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol
 
 from cortex.canonical_memory.publishers import CanonicalDecisionPublisher
 from cortex.canonical_memory.repositories import (
@@ -22,6 +23,13 @@ from cortex.retrieval.task_context import (
     parse_task_context_request,
 )
 from cortex.runtime import CortexAuthority, CortexRuntime
+
+
+class TaskContextProxy(Protocol):
+    """Narrow transport seam for an API-backed task-context tool."""
+
+    async def get_task_context(self, request: TaskContextRequest) -> dict[str, Any]: ...
+
 
 TOOL_NAMES = (
     "get_task_context",
@@ -67,16 +75,33 @@ class McpServer:
         runtime: CortexRuntime,
         authority: CortexAuthority,
         canonical_service: CanonicalDecisionService | None = None,
+        task_context_proxy: TaskContextProxy | None = None,
+        proxy_only: bool = False,
     ) -> None:
         self.runtime = runtime
         self.authority = authority
         self.canonical_service = canonical_service or _canonical_service_for_runtime(
             runtime
         )
+        self.task_context_proxy = task_context_proxy
+        self.proxy_only = proxy_only
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        if self.proxy_only and name not in {
+            "get_task_context",
+            "create_handoff_bundle",
+        }:
+            return {"ok": False, "error": "tool_unavailable_in_proxy_mode"}
+        if name == "get_task_context" and self.task_context_proxy is not None:
+            try:
+                request = parse_task_context_request(arguments or {})
+            except Exception:
+                return invalid_arguments_response(
+                    trace_id=self.authority.trace_id, live_data=False
+                ).model_dump(mode="json", exclude_none=True)
+            return await self.task_context_proxy.get_task_context(request)
         return await call_tool(
             name,
             arguments,
@@ -84,6 +109,17 @@ class McpServer:
             authority=self.authority,
             canonical_service=self.canonical_service,
         )
+
+    def tool_definitions(self) -> list[dict[str, object]]:
+        """Return only the safe surface available to this server instance."""
+        definitions = list_tool_definitions()
+        if not self.proxy_only:
+            return definitions
+        return [
+            definition
+            for definition in definitions
+            if definition["name"] in {"get_task_context", "create_handoff_bundle"}
+        ]
 
 
 def create_fixture_server(*, workspace_id: str = "ws_1") -> McpServer:
@@ -100,6 +136,25 @@ def create_fixture_server(*, workspace_id: str = "ws_1") -> McpServer:
             trace_id="mcp-local-fixture",
         ),
         canonical_service=_canonical_service,
+    )
+
+
+def create_local_proxy_server(*, task_context_proxy: TaskContextProxy) -> McpServer:
+    """Build an API-backed server with a fixed, non-client-supplied authority.
+
+    Only ``get_task_context`` uses the proxy. Other retrieval tools remain
+    unavailable in proxy mode.
+    """
+    return McpServer(
+        runtime=_local_runtime,
+        authority=CortexAuthority(
+            workspace_id="mcp-proxy-configured",
+            actor_id=None,
+            trace_id="mcp-local-proxy",
+        ),
+        canonical_service=_canonical_service,
+        task_context_proxy=task_context_proxy,
+        proxy_only=True,
     )
 
 
@@ -503,7 +558,11 @@ async def handle_json_rpc_message(
             "serverInfo": {"name": "cortex-mcp", "version": "0.1.0"},
         }
     elif method == "tools/list":
-        result = {"tools": list_tool_definitions()}
+        result = {
+            "tools": server.tool_definitions()
+            if server is not None
+            else list_tool_definitions()
+        }
     elif method == "tools/call":
         name = params.get("name")
         arguments = params.get("arguments", {})
@@ -564,6 +623,28 @@ async def serve_stdio(
 
 def main() -> None:
     """Console-script entry point for the local MCP stdio server."""
+    from cortex.mcp.proxy import (
+        ApiTaskContextProxy,
+        LocalMcpProxyConfig,
+        McpProxyConfigurationError,
+        UnavailableTaskContextProxy,
+    )
+
+    mode = os.environ.get("CORTEX_MCP_MODE", "").strip().lower()
+    if mode == "fixture":
+        asyncio.run(serve_stdio(server=create_fixture_server()))
+        return
+    if mode == "proxy":
+        try:
+            proxy: TaskContextProxy = ApiTaskContextProxy(
+                LocalMcpProxyConfig.from_environment()
+            )
+        except McpProxyConfigurationError:
+            proxy = UnavailableTaskContextProxy()
+        asyncio.run(
+            serve_stdio(server=create_local_proxy_server(task_context_proxy=proxy))
+        )
+        return
     asyncio.run(serve_stdio())
 
 

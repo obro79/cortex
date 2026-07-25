@@ -28,6 +28,10 @@ from cortex.normalization.repositories import (
     InMemorySourceObjectRepository,
 )
 from cortex.normalization.service import SourceNormalizationService
+from cortex.permissions.scopes import (
+    InMemoryPermissionScopeRepository,
+    SqlAlchemyPermissionScopeService,
+)
 from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.security.tokens import TokenCipher
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
@@ -72,6 +76,7 @@ class SlackConnectorServices:
     deliveries: Any
     cursors: Any
     backfills: Any
+    permission_scope_repository: Any
     raw_events: InMemoryRawEventRepository
     payload_store: PayloadStore
     source_objects: InMemorySourceObjectRepository
@@ -99,6 +104,7 @@ def create_slack_connector_services(
     provider_rate_limit_policy: RateLimitPolicy | None = None,
     settings: Settings | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
+    permission_scope_repository: Any | None = None,
 ) -> SlackConnectorServices:
     secrets: Any
     installations: Any
@@ -124,6 +130,10 @@ def create_slack_connector_services(
         deliveries = SqlAlchemyWebhookDeliveryRepository(session_factory)
         cursors = SqlAlchemyProviderCursorRepository(session_factory)
         backfills = SqlAlchemyBackfillJobRepository(session_factory)
+        resolved_permission_scope_repository = (
+            permission_scope_repository
+            or SqlAlchemyPermissionScopeService(session_factory)
+        )
     else:
         secrets = InMemorySecretRefRepository()
         installations = InMemoryOAuthInstallationRepository()
@@ -131,6 +141,9 @@ def create_slack_connector_services(
         deliveries = InMemoryWebhookDeliveryRepository()
         cursors = InMemoryProviderCursorRepository()
         backfills = InMemoryBackfillJobRepository()
+        resolved_permission_scope_repository = (
+            permission_scope_repository or InMemoryPermissionScopeRepository()
+        )
     resolved_event_bus = event_bus or InMemoryEventBus()
     raw_events = InMemoryRawEventRepository()
     resolved_payload_store = payload_store or InMemoryPayloadStore()
@@ -197,6 +210,7 @@ def create_slack_connector_services(
             secrets=secrets,
             source_connections=source_connections,
             client=resolved_slack_client or EmptySlackWebClient(),
+            permission_scope_repository=resolved_permission_scope_repository,
         ),
         webhooks=SlackWebhookService(
             deliveries=deliveries,
@@ -228,6 +242,7 @@ def create_slack_connector_services(
         deliveries=deliveries,
         cursors=cursors,
         backfills=backfills,
+        permission_scope_repository=resolved_permission_scope_repository,
         raw_events=raw_events,
         payload_store=resolved_payload_store,
         source_objects=source_objects,

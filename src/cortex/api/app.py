@@ -1,5 +1,6 @@
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
+from importlib import import_module
+from typing import Any, cast
 
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +56,9 @@ def create_app(
     *,
     ephemeral_cache: EphemeralCacheService | None = None,
     cortex_runtime: CortexRuntime | None = None,
-    durable_permission_service_factory: Callable[[AsyncSession], PermissionService]
+    durable_permission_service_factory: Callable[
+        [AsyncSession, str], PermissionService | Awaitable[PermissionService]
+    ]
     | None = None,
 ) -> FastAPI:
     resolved = settings or get_settings()
@@ -72,22 +75,18 @@ def create_app(
         else None
     )
     app.state.session_factory = session_factory
-    if (
-        cortex_runtime is None
-        and session_factory is not None
-        and resolved.qdrant_url
-        and durable_permission_service_factory is not None
-    ):
+    if cortex_runtime is None and session_factory is not None and resolved.qdrant_url:
         # SQL is canonical and Qdrant only supplies derived vector candidates.
-        # A durable permission snapshot factory is mandatory: installing a
-        # retrieval runtime without it would either leak unscoped content or
-        # fail every request at execution time.  Deployments that have not
-        # wired durable scope/ACL authority receive an explicit 503 instead.
+        # Permissions are materialized per request into an isolated snapshot;
+        # no active scopes remains an explicit deny, never an in-memory global.
         app.state.cortex_runtime = CortexRuntime(
             retrieval=DurableContextRetrieval(
                 session_factory=session_factory,
                 settings=resolved,
-                permission_service_factory=durable_permission_service_factory,
+                permission_service_factory=(
+                    durable_permission_service_factory
+                    or _load_durable_permission_service_snapshot
+                ),
             ),
             context_gate=None,
             live_data=True,
@@ -265,6 +264,23 @@ def create_app(
         )
         app.include_router(ui_router)
     return app
+
+
+async def _load_durable_permission_service_snapshot(
+    session: AsyncSession, workspace_id: str
+) -> PermissionService:
+    """Load the per-workspace SQL scope snapshot at the durable boundary.
+
+    Imported lazily so the API module remains importable during incremental
+    migrations, while a live request still fails closed if the authority
+    materializer is unavailable or its SQL lookup fails.
+    """
+    scopes = import_module("cortex.permissions.scopes")
+    loader = cast(
+        Callable[[AsyncSession, str], Awaitable[PermissionService]],
+        scopes.__dict__["load_permission_service_snapshot"],
+    )
+    return await loader(session, workspace_id)
 
 
 app = create_app(

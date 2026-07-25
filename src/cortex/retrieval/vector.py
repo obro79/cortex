@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
+from cortex.embeddings.deterministic import EmbeddingProvider
 from cortex.ingestion.payloads import sha256_digest
 from cortex.interfaces.vector_index import VectorIndex
 from cortex.utils.asyncio import maybe_await
@@ -23,7 +23,7 @@ class VectorRetriever:
         *,
         vector_index: VectorIndex,
         source_chunks: object,
-        embedder: DeterministicEmbeddingProvider,
+        embedder: EmbeddingProvider,
         collection: str = "fixture-cortex-dev",
     ) -> None:
         self.vector_index = vector_index
@@ -39,7 +39,12 @@ class VectorRetriever:
         limit: int,
     ) -> list[Candidate]:
         query_hash = sha256_digest(plan.normalized_query.encode())
-        embedding = self.embedder.embed(query_hash)
+        # Query/document profiles keep the same model/version/dimensions while
+        # allowing providers such as Gemini to apply RETRIEVAL_QUERY semantics.
+        # Deterministic fixtures intentionally ignore the supplied source text.
+        embedding = await maybe_await(
+            self.embedder.embed(query_hash, plan.normalized_query)
+        )
         allowed_providers = {provider.lower() for provider in plan.provider_filters}
         allowed_sources = set(plan.source_allowlist)
         filtered_search = getattr(self.vector_index, "search_filtered", None)

@@ -16,12 +16,14 @@ class SlackSourceSelectionService:
         secrets: Any,
         source_connections: Any,
         client: SlackWebClient,
+        permission_scope_repository: Any,
         removal_callback: Callable[[str, str], Awaitable[None] | None] | None = None,
     ) -> None:
         self.installations = installations
         self.secrets = secrets
         self.source_connections = source_connections
         self.client = client
+        self.permission_scope_repository = permission_scope_repository
         self.removal_callback = removal_callback
 
     async def list_channels(
@@ -78,20 +80,28 @@ class SlackSourceSelectionService:
             raise PermissionError("workspace_mismatch")
         selected = []
         for channel in channels:
-            selected.append(
-                await maybe_await(
-                    self.source_connections.upsert_channel(
-                        workspace_id=installation.workspace_id,
-                        oauth_installation_id=oauth_installation_id,
-                        channel_id=channel["id"],
-                        display_name=channel.get("name"),
-                        provider_metadata_json={
-                            "source_kind": "slack_channel",
-                            "team_id": installation.provider_workspace_id,
-                        },
-                    )
+            channel_id = channel["id"]
+            source = await maybe_await(
+                self.source_connections.upsert_channel(
+                    workspace_id=installation.workspace_id,
+                    oauth_installation_id=oauth_installation_id,
+                    channel_id=channel_id,
+                    display_name=channel.get("name"),
+                    provider_metadata_json={
+                        "source_kind": "slack_channel",
+                        "team_id": installation.provider_workspace_id,
+                    },
                 )
             )
+            await maybe_await(
+                self.permission_scope_repository.upsert_active(
+                    workspace_id=installation.workspace_id,
+                    provider="slack",
+                    scope_type="slack_channel",
+                    external_id=channel_id,
+                )
+            )
+            selected.append(source)
         return {
             "ok": True,
             "source_connections": [
@@ -114,6 +124,16 @@ class SlackSourceSelectionService:
                 "workspace_id": workspace_id,
             }
         await maybe_await(self.removal_callback(workspace_id, source_connection_id))
+        # Revoke retrieval before changing the connector's selected state. If the
+        # following disable fails, authorization remains fail-closed.
+        await maybe_await(
+            self.permission_scope_repository.remove(
+                workspace_id=workspace_id,
+                provider="slack",
+                scope_type="slack_channel",
+                external_id=source.external_source_id,
+            )
+        )
         disabled = await maybe_await(
             self.source_connections.disable_channel(
                 workspace_id=workspace_id, source_connection_id=source_connection_id

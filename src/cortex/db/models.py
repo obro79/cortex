@@ -1051,6 +1051,48 @@ class ProviderPrincipalMappingRecord(Base):
     )
 
 
+class PermissionScopeRecord(Base):
+    """Durable, hashed source-selection scope used by retrieval authorization."""
+
+    __tablename__ = "permission_scopes"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "scope_type",
+            "external_id_hash",
+            name="uq_permission_scopes_identity",
+        ),
+        Index(
+            "ix_permission_scopes_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_id_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    created_by_actor_id: Mapped[str | None] = mapped_column(String(128))
+    removed_by_actor_id: Mapped[str | None] = mapped_column(String(128))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class CanonicalDecisionRecord(Base):
     __tablename__ = "canonical_decisions"
     __table_args__ = (

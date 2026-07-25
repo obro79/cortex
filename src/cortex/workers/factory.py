@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -12,11 +11,8 @@ from cortex.chunking.service import ChunkingService
 from cortex.chunking.source_aware import SourceAwareChunker
 from cortex.config import Settings
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.embeddings.deterministic import (
-    DeterministicEmbeddingProvider,
-    EmbeddingProvider,
-)
-from cortex.embeddings.gemini import GeminiEmbeddingProvider
+from cortex.embeddings.deterministic import EmbeddingProvider
+from cortex.embeddings.profile import EmbeddingIndexProfile
 from cortex.embeddings.publishers import EmbeddingPublisher
 from cortex.embeddings.repositories import SqlAlchemyEmbeddingRecordRepository
 from cortex.embeddings.service import EmbeddingService
@@ -67,6 +63,9 @@ class SqlPipelineDispatcher:
         self.settings = settings
         self.vector_index = vector_index
         self.retrieval_config = load_retrieval_config()
+        self.embedding_profile = EmbeddingIndexProfile.from_settings(
+            settings, config=self.retrieval_config
+        )
         self.cache = (
             build_ephemeral_cache(settings)
             if settings.cortex_model_rate_limit_enabled
@@ -131,6 +130,7 @@ class SqlPipelineDispatcher:
             embeddings=SqlAlchemyEmbeddingRecordRepository(session),
             provider=embedding_provider,
             publisher=EmbeddingPublisher(event_bus),
+            vector_collection=self.embedding_profile.collection,
             model_rate_limiter=(
                 RateLimitService(self.cache)
                 if self.cache is not None
@@ -177,21 +177,7 @@ class SqlPipelineDispatcher:
         return None
 
     def _embedding_provider(self) -> EmbeddingProvider:
-        embeddings = self.retrieval_config.embeddings
-        if self.settings.cortex_embedding_mode == "real":
-            return cast(
-                EmbeddingProvider,
-                GeminiEmbeddingProvider(
-                    api_key=self.settings.gemini_api_key,
-                    model=embeddings.prod_model,
-                    dimensions=embeddings.prod_dimensions,
-                    version=embeddings.version,
-                ),
-            )
-        return DeterministicEmbeddingProvider(
-            dimensions=16,
-            version=embeddings.version,
-        )
+        return self.embedding_profile.document_embedder()
 
 
 def _result_status(result: object | None) -> str | None:
