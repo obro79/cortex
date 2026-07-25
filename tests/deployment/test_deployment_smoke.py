@@ -22,11 +22,27 @@ def test_default_smoke_commands_validate_compose_and_build_images() -> None:
     assert [command.name for command in commands] == [
         "compose config",
         "compose migrate config",
+        "compose lifecycle config",
+        "compose provider-acl config",
         "compose build api worker",
     ]
     assert commands[0].argv == ("docker", "compose", "config")
     assert commands[1].argv == ("docker", "compose", "--profile", "migrate", "config")
-    assert commands[2].argv == ("docker", "compose", "build", "api", "worker")
+    assert commands[2].argv == (
+        "docker",
+        "compose",
+        "--profile",
+        "lifecycle",
+        "config",
+    )
+    assert commands[3].argv == (
+        "docker",
+        "compose",
+        "--profile",
+        "provider-acl",
+        "config",
+    )
+    assert commands[4].argv == ("docker", "compose", "build", "api", "worker")
 
 
 def test_full_smoke_includes_dependency_start_migration_api_and_worker() -> None:
@@ -35,6 +51,8 @@ def test_full_smoke_includes_dependency_start_migration_api_and_worker() -> None
     assert [command.name for command in commands] == [
         "compose config",
         "compose migrate config",
+        "compose lifecycle config",
+        "compose provider-acl config",
         "start dependencies",
         "run migrations",
         "start api and worker",
@@ -49,4 +67,5 @@ def test_smoke_list_mode_prints_commands(capsys) -> None:
     output = capsys.readouterr().out
     assert "docker compose config" in output
     assert "docker compose --profile migrate config" in output
+    assert "docker compose --profile provider-acl config" in output
     assert "docker compose build" not in output

@@ -48,6 +48,10 @@ class SlackWebClient(Protocol):
         self, *, access_token: str, channel_id: str, thread_ts: str
     ) -> list[dict[str, Any]]: ...
 
+    async def conversation_members(
+        self, *, access_token: str, channel_id: str
+    ) -> list[str]: ...
+
 
 class EmptySlackWebClient:
     async def conversations_list(
@@ -72,6 +76,11 @@ class EmptySlackWebClient:
     async def thread_replies(
         self, *, access_token: str, channel_id: str, thread_ts: str
     ) -> list[dict[str, Any]]:
+        return []
+
+    async def conversation_members(
+        self, *, access_token: str, channel_id: str
+    ) -> list[str]:
         return []
 
 
@@ -232,3 +241,31 @@ class RealSlackWebClient:
         if not isinstance(messages, list):
             raise SlackPermanentError("slack_invalid_replies")
         return [dict(message) for message in messages if isinstance(message, dict)]
+
+    async def conversation_members(
+        self, *, access_token: str, channel_id: str
+    ) -> list[str]:
+        members: list[str] = []
+        cursor: str | None = None
+        while True:
+            params: SlackQueryParams = {"channel": channel_id, "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            payload = await self.http.api_get(
+                "conversations.members",
+                access_token=access_token,
+                params=params,
+            )
+            page_members = payload.get("members", [])
+            if not isinstance(page_members, list):
+                raise SlackPermanentError("slack_invalid_members")
+            members.extend(str(member) for member in page_members if member)
+            metadata = payload.get("response_metadata")
+            next_cursor = (
+                str(metadata.get("next_cursor") or "")
+                if isinstance(metadata, dict)
+                else ""
+            )
+            if not next_cursor:
+                return members
+            cursor = next_cursor

@@ -7,7 +7,11 @@ from cortex.auth.dependencies import (
     require_tenant_context,
 )
 from cortex.config import Settings
-from cortex.tenancy import InMemoryTenantRepository, TenantContext
+from cortex.tenancy import (
+    InMemoryTenantRepository,
+    SqlAlchemyTenantRepository,
+    TenantContext,
+)
 from cortex.ui.auth import ACTOR_ID_HEADER, ROLES_HEADER, WORKSPACE_ID_HEADER
 
 TENANT_CONTEXT_DEPENDENCY = Depends(require_tenant_context)
@@ -99,6 +103,20 @@ def test_public_auth_dependency_requires_public_auth_enabled() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "public auth is disabled"
+
+
+def test_create_app_wires_sql_tenant_repository_for_sql_public_auth() -> None:
+    from cortex.api.app import create_app
+
+    app = create_app(
+        Settings(
+            cortex_public_auth_enabled=True,
+            cortex_state_backend="sql",
+            database_url="postgresql+asyncpg://localhost/cortex",
+        )
+    )
+
+    assert isinstance(app.state.tenant_repository, SqlAlchemyTenantRepository)
 
 
 def _app_with_owner_context(

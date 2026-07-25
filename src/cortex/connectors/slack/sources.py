@@ -22,11 +22,17 @@ class SlackSourceSelectionService:
         self.client = client
 
     async def list_channels(
-        self, *, oauth_installation_id: str, cursor: str | None = None
+        self,
+        *,
+        workspace_id: str,
+        oauth_installation_id: str,
+        cursor: str | None = None,
     ) -> dict[str, object]:
         installation = await maybe_await(
             self.installations.get_by_id(oauth_installation_id)
         )
+        if installation.workspace_id != workspace_id:
+            raise PermissionError("workspace_mismatch")
         access_token = await maybe_await(
             self.secrets.get_token(installation.secret_ref_id)
         )
@@ -46,6 +52,15 @@ class SlackSourceSelectionService:
         ]
         return {"ok": True, "channels": channels, "next_cursor": page.next_cursor}
 
+    async def require_installation_workspace(
+        self, *, workspace_id: str, oauth_installation_id: str
+    ) -> None:
+        installation = await maybe_await(
+            self.installations.get_by_id(oauth_installation_id)
+        )
+        if installation.workspace_id != workspace_id:
+            raise PermissionError("workspace_mismatch")
+
     async def select_channels(
         self,
         *,
@@ -56,6 +71,8 @@ class SlackSourceSelectionService:
         installation = await maybe_await(
             self.installations.get_by_id(oauth_installation_id)
         )
+        if installation.workspace_id != workspace_id:
+            raise PermissionError("workspace_mismatch")
         selected = []
         for channel in channels:
             selected.append(

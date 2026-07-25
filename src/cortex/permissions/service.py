@@ -6,6 +6,11 @@ from typing import Literal
 from cortex.contracts.entities import PermissionScope, SourceChunk
 from cortex.retrieval.candidates import Candidate
 
+from .provider_acls import (
+    InMemoryProviderAclRepository,
+    ProviderAclPrincipal,
+    provider_acl_resources_for_chunk,
+)
 from .scopes import InMemoryPermissionScopeRepository, scope_external_id_hash
 
 PermissionDecision = Literal["allowed", "denied"]
@@ -24,8 +29,14 @@ class PermissionFilterResult:
 
 
 class PermissionService:
-    def __init__(self, scopes: InMemoryPermissionScopeRepository) -> None:
+    def __init__(
+        self,
+        scopes: InMemoryPermissionScopeRepository,
+        *,
+        provider_acls: InMemoryProviderAclRepository | None = None,
+    ) -> None:
         self.scopes = scopes
+        self.provider_acls = provider_acls
 
     def snapshot_hash(self, workspace_id: str) -> str:
         return self.scopes.create_snapshot(workspace_id).snapshot_hash
@@ -36,6 +47,7 @@ class PermissionService:
         workspace_id: str,
         chunk: SourceChunk,
         source_object_allowlist: list[str] | None = None,
+        caller_principals: list[ProviderAclPrincipal] | None = None,
     ) -> PermissionCheck:
         if chunk.workspace_id != workspace_id:
             return PermissionCheck(decision="denied", reason="workspace_mismatch")
@@ -43,6 +55,13 @@ class PermissionService:
             source_object_allowlist
             and chunk.source_object_id in source_object_allowlist
         ):
+            acl_check = self._check_provider_acl(
+                workspace_id=workspace_id,
+                chunk=chunk,
+                caller_principals=caller_principals,
+            )
+            if acl_check is not None:
+                return acl_check
             return PermissionCheck(decision="allowed", reason="source_object_allowlist")
 
         active = self.scopes.list_active(workspace_id)
@@ -51,6 +70,13 @@ class PermissionService:
                 decision="denied", reason="no_active_permission_scope"
             )
         if self._matches_any_scope(chunk, active):
+            acl_check = self._check_provider_acl(
+                workspace_id=workspace_id,
+                chunk=chunk,
+                caller_principals=caller_principals,
+            )
+            if acl_check is not None:
+                return acl_check
             return PermissionCheck(decision="allowed", reason="permission_scope")
         return PermissionCheck(decision="denied", reason="permission_scope")
 
@@ -60,6 +86,7 @@ class PermissionService:
         workspace_id: str,
         candidates: list[Candidate],
         source_object_allowlist: list[str] | None = None,
+        caller_principals: list[ProviderAclPrincipal] | None = None,
     ) -> PermissionFilterResult:
         allowed: list[Candidate] = []
         denied_count = 0
@@ -69,6 +96,7 @@ class PermissionService:
                 workspace_id=workspace_id,
                 chunk=candidate.source_chunk,
                 source_object_allowlist=source_object_allowlist,
+                caller_principals=caller_principals,
             )
             if check.decision == "allowed":
                 allowed.append(candidate)
@@ -84,6 +112,36 @@ class PermissionService:
         self, chunk: SourceChunk, scopes: list[PermissionScope]
     ) -> bool:
         return any(_scope_matches_chunk(scope, chunk) for scope in scopes)
+
+    def _check_provider_acl(
+        self,
+        *,
+        workspace_id: str,
+        chunk: SourceChunk,
+        caller_principals: list[ProviderAclPrincipal] | None,
+    ) -> PermissionCheck | None:
+        if self.provider_acls is None:
+            return None
+        resources = provider_acl_resources_for_chunk(chunk)
+        if not resources:
+            return None
+        if not caller_principals:
+            return PermissionCheck(
+                decision="denied",
+                reason="provider_acl_missing_principal",
+            )
+        decisions = [
+            self.provider_acls.authorize(
+                workspace_id=workspace_id,
+                resource=resource,
+                principals=caller_principals,
+            )
+            for resource in resources
+        ]
+        if any(decision.allowed for decision in decisions):
+            return PermissionCheck(decision="allowed", reason="provider_acl")
+        reason = decisions[0].reason if decisions else "provider_acl_denied"
+        return PermissionCheck(decision="denied", reason=reason)
 
 
 def _scope_matches_chunk(scope: PermissionScope, chunk: SourceChunk) -> bool:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import SourceChunk
@@ -43,6 +43,37 @@ class InMemorySourceChunkRepository:
             chunk
             for chunk in self._records.values()
             if workspace_id is None or chunk.workspace_id == workspace_id
+        ]
+
+    def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+        source_chunk_ids: set[str] | None = None,
+    ) -> list[SourceChunk]:
+        filters_requested = any(
+            item is not None
+            for item in (source_object_ids, source_file_ids, source_chunk_ids)
+        )
+        return [
+            chunk
+            for chunk in self._records.values()
+            if chunk.workspace_id == workspace_id
+            and (
+                not filters_requested
+                or (
+                    source_object_ids is not None
+                    and chunk.source_object_id in source_object_ids
+                )
+                or (
+                    source_file_ids is not None
+                    and chunk.source_file_id is not None
+                    and chunk.source_file_id in source_file_ids
+                )
+                or (source_chunk_ids is not None and chunk.id in source_chunk_ids)
+            )
         ]
 
     def search_fts(
@@ -87,6 +118,33 @@ class InMemorySourceChunkRepository:
                 self._records[chunk.id] = updated
                 stale.append(updated)
         return stale
+
+    def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+        source_chunk_ids: set[str] | None = None,
+    ) -> list[SourceChunk]:
+        deleted: list[SourceChunk] = []
+        for chunk in self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_object_ids=source_object_ids,
+            source_file_ids=source_file_ids,
+            source_chunk_ids=source_chunk_ids,
+        ):
+            if chunk.status == SourceChunkStatus.DELETED:
+                continue
+            updated = chunk.model_copy(
+                update={
+                    "status": SourceChunkStatus.DELETED,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._records[chunk.id] = updated
+            deleted.append(updated)
+        return deleted
 
     def _upsert(self, record: SourceChunk) -> ChunkUpsertResult:
         key = (
@@ -175,6 +233,29 @@ class SqlAlchemySourceChunkRepository:
         result = await self.session.execute(statement)
         return [source_chunk_from_record(record) for record in result.scalars()]
 
+    async def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+        source_chunk_ids: set[str] | None = None,
+    ) -> list[SourceChunk]:
+        statement = select(SourceChunkRecord).where(
+            SourceChunkRecord.workspace_id == workspace_id
+        )
+        filters = []
+        if source_object_ids is not None:
+            filters.append(SourceChunkRecord.source_object_id.in_(source_object_ids))
+        if source_file_ids is not None:
+            filters.append(SourceChunkRecord.source_file_id.in_(source_file_ids))
+        if source_chunk_ids is not None:
+            filters.append(SourceChunkRecord.id.in_(source_chunk_ids))
+        if filters:
+            statement = statement.where(or_(*filters))
+        result = await self.session.execute(statement)
+        return [source_chunk_from_record(record) for record in result.scalars()]
+
     async def search_fts(
         self,
         *,
@@ -223,6 +304,40 @@ class SqlAlchemySourceChunkRepository:
             stale.append(source_chunk_from_record(record))
         await self.session.flush()
         return stale
+
+    async def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+        source_chunk_ids: set[str] | None = None,
+    ) -> list[SourceChunk]:
+        chunks = await self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_object_ids=source_object_ids,
+            source_file_ids=source_file_ids,
+            source_chunk_ids=source_chunk_ids,
+        )
+        ids = {
+            chunk.id for chunk in chunks if chunk.status != SourceChunkStatus.DELETED
+        }
+        if not ids:
+            return []
+        now = datetime.now(UTC)
+        await self.session.execute(
+            update(SourceChunkRecord)
+            .where(SourceChunkRecord.id.in_(ids))
+            .values(status=SourceChunkStatus.DELETED.value, updated_at=now)
+        )
+        await self.session.flush()
+        return [
+            chunk.model_copy(
+                update={"status": SourceChunkStatus.DELETED, "updated_at": now}
+            )
+            for chunk in chunks
+            if chunk.id in ids
+        ]
 
     async def _upsert(self, record: SourceChunk) -> ChunkUpsertResult:
         existing = await self._get_by_identity(record)

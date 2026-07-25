@@ -17,7 +17,11 @@ from cortex.tenancy.rbac import (
     PermissionDecision,
     RolePermissionService,
 )
-from cortex.tenancy.repositories import InMemoryTenantRepository, TenantRepository
+from cortex.tenancy.repositories import (
+    InMemoryTenantRepository,
+    SqlAlchemyTenantRepository,
+    TenantRepository,
+)
 
 __all__ = [
     "InMemoryTenantRepository",
@@ -31,6 +35,7 @@ __all__ = [
     "Permission",
     "PermissionDecision",
     "RolePermissionService",
+    "SqlAlchemyTenantRepository",
     "TenantContext",
     "TenantRepository",
     "TenantStatus",

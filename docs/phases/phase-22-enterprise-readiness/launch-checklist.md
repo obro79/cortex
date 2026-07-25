@@ -10,18 +10,24 @@ Current status: invite-only beta, not broad self-serve enterprise rollout.
   scope run logs.
 - Auth/onboarding: Phase 15 public auth context evidence; onboarding flow is
   still a launch blocker.
-- Connector setup: Phase 16 shared setup service evidence; provider UI/API
-  install routes are still launch blockers.
-- Billing: Phase 17 plan enforcement core evidence; Stripe checkout/webhooks
-  are still launch blockers.
-- RBAC: Phase 18 role/permission matrix evidence; route-level wiring remains
-  incomplete.
+- Connector setup: Phase 16 shared setup service evidence plus hardened public
+  API routes for source listing, selection, and backfill. Customer-facing UI
+  setup remains a launch blocker.
+- Billing: Phase 17 plan enforcement core evidence plus SQL-backed billing and
+  Stripe verification/session boundaries. Customer-facing checkout and portal
+  API routes exist; live checkout/portal/webhook smoke evidence is still a
+  launch blocker.
+- RBAC: Phase 18 role/permission matrix evidence; hardened connector admin
+  routes, billing routes, and lifecycle routes enforce membership, workspace
+  match, and permissions. Dev routes must remain disabled outside local/test.
 - Admin UI: Phase 19 navigation foundation evidence; several pages remain
   placeholder states.
-- Compliance: Phase 20 lifecycle core evidence; actual repository deletion and
-  export execution remain incomplete.
-- Operations: Phase 21 production operations runbook evidence; staging drills
-  still need real results.
+- Compliance: Phase 20 lifecycle core evidence plus repository-backed
+  deletion/export executor foundations. SQL lifecycle persistence, async service
+  wiring, API queue routes, a lifecycle worker role, and Qdrant deletion wiring
+  are present, but staging deletion/export drill evidence remains incomplete.
+- Operations: Phase 21 production operations runbook evidence plus no-secret
+  backend ops launch gate tooling; staging drills still need real results.
 
 ## Security Review Checklist
 
@@ -37,8 +43,13 @@ Current status: invite-only beta, not broad self-serve enterprise rollout.
 ## Launch Blockers
 
 - Complete Phase 15 onboarding routes and browser coverage.
-- Complete Slack and GitHub setup UI/API flows.
-- Complete Stripe checkout, webhook verification, and billing portal.
-- Wire RBAC checks into all public admin routes.
-- Implement export/deletion workers against real repositories.
+- Complete Slack and GitHub customer setup UI flows.
+- Validate Stripe checkout, webhook verification, and billing portal in staging
+  with live/staging secrets.
+- Keep dev routes disabled outside local/test and review any new public admin
+  route before enabling it.
+- Run staged deletion/export lifecycle drills against SQL, payload storage, and
+  Qdrant.
+- Deploy scheduled provider-native ACL snapshot ingestion from live providers
+  using the `provider-acl` worker and prove freshness alerting in staging.
 - Run staging restore, rollback, load, and cost drills.

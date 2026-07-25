@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import EmbeddingRecord
@@ -74,6 +74,28 @@ class InMemoryEmbeddingRecordRepository:
     def get_by_id(self, embedding_id: str) -> EmbeddingRecord:
         return self._records[embedding_id]
 
+    def list_all(self, workspace_id: str | None = None) -> list[EmbeddingRecord]:
+        return [
+            record
+            for record in self._records.values()
+            if workspace_id is None or record.workspace_id == workspace_id
+        ]
+
+    def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_chunk_ids: set[str] | None = None,
+        embedding_ids: set[str] | None = None,
+    ) -> list[EmbeddingRecord]:
+        return [
+            record
+            for record in self._records.values()
+            if record.workspace_id == workspace_id
+            and (source_chunk_ids is None or record.source_chunk_id in source_chunk_ids)
+            and (embedding_ids is None or record.id in embedding_ids)
+        ]
+
     def mark_completed(
         self, embedding_id: str, *, vector_hash: str, collection: str | None = None
     ) -> EmbeddingRecord:
@@ -106,6 +128,31 @@ class InMemoryEmbeddingRecordRepository:
         )
         self._records[embedding_id] = updated
         return updated
+
+    def mark_stale_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_chunk_ids: set[str] | None = None,
+        embedding_ids: set[str] | None = None,
+    ) -> list[EmbeddingRecord]:
+        stale: list[EmbeddingRecord] = []
+        for record in self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_chunk_ids=source_chunk_ids,
+            embedding_ids=embedding_ids,
+        ):
+            if record.status == EmbeddingJobStatus.STALE:
+                continue
+            updated = record.model_copy(
+                update={
+                    "status": EmbeddingJobStatus.STALE,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._records[record.id] = updated
+            stale.append(updated)
+        return stale
 
 
 def embedding_record_from_record(record: EmbeddingRecordRecord) -> EmbeddingRecord:
@@ -189,6 +236,34 @@ class SqlAlchemyEmbeddingRecordRepository:
             raise KeyError(embedding_id)
         return embedding_record_from_record(record)
 
+    async def list_all(self, workspace_id: str | None = None) -> list[EmbeddingRecord]:
+        statement = select(EmbeddingRecordRecord)
+        if workspace_id is not None:
+            statement = statement.where(
+                EmbeddingRecordRecord.workspace_id == workspace_id
+            )
+        result = await self.session.execute(statement)
+        return [embedding_record_from_record(record) for record in result.scalars()]
+
+    async def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_chunk_ids: set[str] | None = None,
+        embedding_ids: set[str] | None = None,
+    ) -> list[EmbeddingRecord]:
+        statement = select(EmbeddingRecordRecord).where(
+            EmbeddingRecordRecord.workspace_id == workspace_id
+        )
+        if source_chunk_ids is not None:
+            statement = statement.where(
+                EmbeddingRecordRecord.source_chunk_id.in_(source_chunk_ids)
+            )
+        if embedding_ids is not None:
+            statement = statement.where(EmbeddingRecordRecord.id.in_(embedding_ids))
+        result = await self.session.execute(statement)
+        return [embedding_record_from_record(record) for record in result.scalars()]
+
     async def mark_completed(
         self, embedding_id: str, *, vector_hash: str, collection: str | None = None
     ) -> EmbeddingRecord:
@@ -221,6 +296,38 @@ class SqlAlchemyEmbeddingRecordRepository:
         )
         await self._apply_update(updated)
         return updated
+
+    async def mark_stale_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_chunk_ids: set[str] | None = None,
+        embedding_ids: set[str] | None = None,
+    ) -> list[EmbeddingRecord]:
+        records = await self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_chunk_ids=source_chunk_ids,
+            embedding_ids=embedding_ids,
+        )
+        ids = {
+            record.id for record in records if record.status != EmbeddingJobStatus.STALE
+        }
+        if not ids:
+            return []
+        now = datetime.now(UTC)
+        await self.session.execute(
+            update(EmbeddingRecordRecord)
+            .where(EmbeddingRecordRecord.id.in_(ids))
+            .values(status=EmbeddingJobStatus.STALE.value, updated_at=now)
+        )
+        await self.session.flush()
+        return [
+            record.model_copy(
+                update={"status": EmbeddingJobStatus.STALE, "updated_at": now}
+            )
+            for record in records
+            if record.id in ids
+        ]
 
     async def _get_by_chunk_version(
         self, workspace_id: str, source_chunk_id: str, embedding_version: str

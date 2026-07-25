@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import RawEvent
@@ -144,6 +144,36 @@ class InMemoryRawEventRepository:
         except KeyError as error:
             raise RawEventNotFoundError(raw_event_id) from error
 
+    def list_all(self, workspace_id: str | None = None) -> list[RawEvent]:
+        return [
+            event
+            for event in self._events.values()
+            if workspace_id is None or event.workspace_id == workspace_id
+        ]
+
+    def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        raw_event_ids: set[str] | None = None,
+        external_object_keys: set[str] | None = None,
+    ) -> list[RawEvent]:
+        return [
+            event
+            for event in self._events.values()
+            if event.workspace_id == workspace_id
+            and (
+                source_connection_id is None
+                or event.source_connection_id == source_connection_id
+            )
+            and (raw_event_ids is None or event.id in raw_event_ids)
+            and (
+                external_object_keys is None
+                or event.external_object_key in external_object_keys
+            )
+        ]
+
     def get_by_idempotency_key(
         self, workspace_id: str, idempotency_key: str
     ) -> RawEvent | None:
@@ -199,6 +229,33 @@ class InMemoryRawEventRepository:
 
     def mark_deleted(self, raw_event_id: str) -> RawEvent:
         return self._transition(self.get_by_id(raw_event_id), RawEventStatus.DELETED)
+
+    def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        raw_event_ids: set[str] | None = None,
+        external_object_keys: set[str] | None = None,
+    ) -> list[RawEvent]:
+        deleted: list[RawEvent] = []
+        for event in self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            raw_event_ids=raw_event_ids,
+            external_object_keys=external_object_keys,
+        ):
+            if event.status == RawEventStatus.DELETED:
+                continue
+            updated = event.model_copy(
+                update={
+                    "status": RawEventStatus.DELETED,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._events[event.id] = updated
+            deleted.append(updated)
+        return deleted
 
     def list_replay_candidates(
         self,
@@ -375,6 +432,37 @@ class SqlAlchemyRawEventRepository:
             raise RawEventNotFoundError(raw_event_id)
         return raw_event_from_record(record)
 
+    async def list_all(self, workspace_id: str | None = None) -> list[RawEvent]:
+        statement = select(RawEventRecord)
+        if workspace_id is not None:
+            statement = statement.where(RawEventRecord.workspace_id == workspace_id)
+        result = await self.session.execute(statement)
+        return [raw_event_from_record(record) for record in result.scalars()]
+
+    async def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        raw_event_ids: set[str] | None = None,
+        external_object_keys: set[str] | None = None,
+    ) -> list[RawEvent]:
+        statement = select(RawEventRecord).where(
+            RawEventRecord.workspace_id == workspace_id
+        )
+        if source_connection_id is not None:
+            statement = statement.where(
+                RawEventRecord.source_connection_id == source_connection_id
+            )
+        if raw_event_ids is not None:
+            statement = statement.where(RawEventRecord.id.in_(raw_event_ids))
+        if external_object_keys is not None:
+            statement = statement.where(
+                RawEventRecord.external_object_key.in_(external_object_keys)
+            )
+        result = await self.session.execute(statement)
+        return [raw_event_from_record(record) for record in result.scalars()]
+
     async def get_by_idempotency_key(
         self, workspace_id: str, idempotency_key: str
     ) -> RawEvent | None:
@@ -455,6 +543,35 @@ class SqlAlchemyRawEventRepository:
 
     async def mark_deleted(self, raw_event_id: str) -> RawEvent:
         return await self._transition(raw_event_id, RawEventStatus.DELETED)
+
+    async def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        raw_event_ids: set[str] | None = None,
+        external_object_keys: set[str] | None = None,
+    ) -> list[RawEvent]:
+        events = await self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            raw_event_ids=raw_event_ids,
+            external_object_keys=external_object_keys,
+        )
+        ids = {event.id for event in events if event.status != RawEventStatus.DELETED}
+        if not ids:
+            return []
+        await self.session.execute(
+            update(RawEventRecord)
+            .where(RawEventRecord.id.in_(ids))
+            .values(status=RawEventStatus.DELETED.value, updated_at=datetime.now(UTC))
+        )
+        await self.session.flush()
+        return [
+            event.model_copy(update={"status": RawEventStatus.DELETED})
+            for event in events
+            if event.id in ids
+        ]
 
     async def list_replay_candidates(
         self,

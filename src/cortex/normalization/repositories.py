@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortex.contracts.entities import SourceFile, SourceObject
@@ -55,6 +55,31 @@ class InMemorySourceObjectRepository:
         except KeyError as error:
             raise SourceRecordNotFoundError(source_object_id) from error
 
+    def list_all(self, workspace_id: str | None = None) -> list[SourceObject]:
+        return [
+            record
+            for record in self._records.values()
+            if workspace_id is None or record.workspace_id == workspace_id
+        ]
+
+    def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+    ) -> list[SourceObject]:
+        return [
+            record
+            for record in self._records.values()
+            if record.workspace_id == workspace_id
+            and (
+                source_connection_id is None
+                or record.source_connection_id == source_connection_id
+            )
+            and (source_object_ids is None or record.id in source_object_ids)
+        ]
+
     def get_by_external_identity(
         self,
         workspace_id: str,
@@ -77,6 +102,32 @@ class InMemorySourceObjectRepository:
             SourceObjectStatus.DELETED,
             deleted_at=datetime.now(UTC),
         )
+
+    def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+    ) -> list[SourceObject]:
+        deleted: list[SourceObject] = []
+        for record in self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            source_object_ids=source_object_ids,
+        ):
+            if record.status == SourceObjectStatus.DELETED:
+                continue
+            updated = record.model_copy(
+                update={
+                    "status": SourceObjectStatus.DELETED,
+                    "deleted_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._records[record.id] = updated
+            deleted.append(updated)
+        return deleted
 
     def _upsert(self, record: SourceObject) -> UpsertResult[SourceObject]:
         existing = self.get_by_external_identity(
@@ -139,6 +190,36 @@ class InMemorySourceFileRepository:
         except KeyError as error:
             raise SourceRecordNotFoundError(source_file_id) from error
 
+    def list_all(self, workspace_id: str | None = None) -> list[SourceFile]:
+        return [
+            record
+            for record in self._records.values()
+            if workspace_id is None or record.workspace_id == workspace_id
+        ]
+
+    def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+    ) -> list[SourceFile]:
+        return [
+            record
+            for record in self._records.values()
+            if record.workspace_id == workspace_id
+            and (
+                source_connection_id is None
+                or record.source_connection_id == source_connection_id
+            )
+            and (
+                source_object_ids is None
+                or record.source_object_id in source_object_ids
+            )
+            and (source_file_ids is None or record.id in source_file_ids)
+        ]
+
     def get_by_external_file_id(
         self, workspace_id: str, provider: str, external_file_id: str
     ) -> SourceFile | None:
@@ -157,6 +238,34 @@ class InMemorySourceFileRepository:
             SourceObjectStatus.DELETED,
             deleted_at=datetime.now(UTC),
         )
+
+    def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+    ) -> list[SourceFile]:
+        deleted: list[SourceFile] = []
+        for record in self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            source_object_ids=source_object_ids,
+            source_file_ids=source_file_ids,
+        ):
+            if record.status == SourceObjectStatus.DELETED:
+                continue
+            updated = record.model_copy(
+                update={
+                    "status": SourceObjectStatus.DELETED,
+                    "deleted_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._records[record.id] = updated
+            deleted.append(updated)
+        return deleted
 
     def _upsert(self, record: SourceFile) -> UpsertResult[SourceFile]:
         if record.provider is None or record.external_file_id is None:
@@ -311,6 +420,32 @@ class SqlAlchemySourceObjectRepository:
             raise SourceRecordNotFoundError(source_object_id)
         return source_object_from_record(record)
 
+    async def list_all(self, workspace_id: str | None = None) -> list[SourceObject]:
+        statement = select(SourceObjectRecord)
+        if workspace_id is not None:
+            statement = statement.where(SourceObjectRecord.workspace_id == workspace_id)
+        result = await self.session.execute(statement)
+        return [source_object_from_record(record) for record in result.scalars()]
+
+    async def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+    ) -> list[SourceObject]:
+        statement = select(SourceObjectRecord).where(
+            SourceObjectRecord.workspace_id == workspace_id
+        )
+        if source_connection_id is not None:
+            statement = statement.where(
+                SourceObjectRecord.source_connection_id == source_connection_id
+            )
+        if source_object_ids is not None:
+            statement = statement.where(SourceObjectRecord.id.in_(source_object_ids))
+        result = await self.session.execute(statement)
+        return [source_object_from_record(record) for record in result.scalars()]
+
     async def get_by_external_identity(
         self,
         workspace_id: str,
@@ -344,6 +479,48 @@ class SqlAlchemySourceObjectRepository:
         )
         await self._apply_update(updated)
         return updated
+
+    async def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+    ) -> list[SourceObject]:
+        records = await self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            source_object_ids=source_object_ids,
+        )
+        ids = {
+            record.id
+            for record in records
+            if record.status != SourceObjectStatus.DELETED
+        }
+        if not ids:
+            return []
+        now = datetime.now(UTC)
+        await self.session.execute(
+            update(SourceObjectRecord)
+            .where(SourceObjectRecord.id.in_(ids))
+            .values(
+                status=SourceObjectStatus.DELETED.value,
+                deleted_at=now,
+                updated_at=now,
+            )
+        )
+        await self.session.flush()
+        return [
+            record.model_copy(
+                update={
+                    "status": SourceObjectStatus.DELETED,
+                    "deleted_at": now,
+                    "updated_at": now,
+                }
+            )
+            for record in records
+            if record.id in ids
+        ]
 
     async def _upsert(self, record: SourceObject) -> UpsertResult[SourceObject]:
         existing = await self.get_by_external_identity(
@@ -442,6 +619,37 @@ class SqlAlchemySourceFileRepository:
             raise SourceRecordNotFoundError(source_file_id)
         return source_file_from_record(record)
 
+    async def list_all(self, workspace_id: str | None = None) -> list[SourceFile]:
+        statement = select(SourceFileRecord)
+        if workspace_id is not None:
+            statement = statement.where(SourceFileRecord.workspace_id == workspace_id)
+        result = await self.session.execute(statement)
+        return [source_file_from_record(record) for record in result.scalars()]
+
+    async def list_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+    ) -> list[SourceFile]:
+        statement = select(SourceFileRecord).where(
+            SourceFileRecord.workspace_id == workspace_id
+        )
+        if source_connection_id is not None:
+            statement = statement.where(
+                SourceFileRecord.source_connection_id == source_connection_id
+            )
+        if source_object_ids is not None:
+            statement = statement.where(
+                SourceFileRecord.source_object_id.in_(source_object_ids)
+            )
+        if source_file_ids is not None:
+            statement = statement.where(SourceFileRecord.id.in_(source_file_ids))
+        result = await self.session.execute(statement)
+        return [source_file_from_record(record) for record in result.scalars()]
+
     async def get_by_external_file_id(
         self, workspace_id: str, provider: str, external_file_id: str
     ) -> SourceFile | None:
@@ -476,6 +684,50 @@ class SqlAlchemySourceFileRepository:
         )
         await self._apply_update(updated)
         return UpsertResult(updated, "updated")
+
+    async def mark_deleted_for_lifecycle(
+        self,
+        *,
+        workspace_id: str,
+        source_connection_id: str | None = None,
+        source_object_ids: set[str] | None = None,
+        source_file_ids: set[str] | None = None,
+    ) -> list[SourceFile]:
+        records = await self.list_for_lifecycle(
+            workspace_id=workspace_id,
+            source_connection_id=source_connection_id,
+            source_object_ids=source_object_ids,
+            source_file_ids=source_file_ids,
+        )
+        ids = {
+            record.id
+            for record in records
+            if record.status != SourceObjectStatus.DELETED
+        }
+        if not ids:
+            return []
+        now = datetime.now(UTC)
+        await self.session.execute(
+            update(SourceFileRecord)
+            .where(SourceFileRecord.id.in_(ids))
+            .values(
+                status=SourceObjectStatus.DELETED.value,
+                deleted_at=now,
+                updated_at=now,
+            )
+        )
+        await self.session.flush()
+        return [
+            record.model_copy(
+                update={
+                    "status": SourceObjectStatus.DELETED,
+                    "deleted_at": now,
+                    "updated_at": now,
+                }
+            )
+            for record in records
+            if record.id in ids
+        ]
 
     async def _apply_update(self, source_file: SourceFile) -> None:
         record = await self.session.get(SourceFileRecord, source_file.id)

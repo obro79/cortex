@@ -44,3 +44,4 @@ Current top-level ADRs:
 - [ADR-020: Layered Platform Components](020-layered-platform-components/)
 - [ADR-021: Distributed Coordination Without Custom Leader](021-distributed-coordination-without-custom-leader/)
 - [ADR-022: Apache Kafka Runtime](022-apache-kafka-runtime/)
+- [ADR-023: Cortex Evidence Pack Public Artifact](023-cortex-evidence-pack-public-artifact/)

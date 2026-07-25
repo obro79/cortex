@@ -1,10 +1,14 @@
+from cortex.api.app import create_app
 from cortex.billing import (
+    AsyncPlanEnforcementService,
     BillingStatus,
     InMemoryBillingRepository,
     PlanEnforcementService,
+    SqlAlchemyBillingRepository,
     SubscriptionStatus,
     UsageDimension,
 )
+from cortex.config import Settings
 
 
 def test_invite_only_default_blocks_source_creation_but_allows_reads() -> None:
@@ -59,10 +63,13 @@ def test_active_trial_plan_enforces_usage_limit_and_records_usage() -> None:
     assert allowed.remaining == 1
     assert denied.allowed is False
     assert denied.reason == "plan_limit_exceeded"
-    assert repo.usage_quantity(
-        organization_id="org_1",
-        dimension=UsageDimension.SOURCES,
-    ) == 3
+    assert (
+        repo.usage_quantity(
+            organization_id="org_1",
+            dimension=UsageDimension.SOURCES,
+        )
+        == 3
+    )
 
 
 def test_subscription_upsert_is_idempotent_for_provider_subscription() -> None:
@@ -91,3 +98,45 @@ def test_subscription_upsert_is_idempotent_for_provider_subscription() -> None:
     assert first.id == second.id
     assert second.status == SubscriptionStatus.ACTIVE
     assert len(repo.subscriptions) == 1
+
+
+async def test_async_plan_enforcement_supports_repository_interface() -> None:
+    repo = InMemoryBillingRepository()
+    customer = repo.ensure_customer(
+        organization_id="org_1",
+        status=BillingStatus.TRIALING,
+    )
+    repo.upsert_subscription(
+        organization_id="org_1",
+        billing_customer_id=customer.id,
+        plan_id="free_trial",
+        status=SubscriptionStatus.TRIALING,
+    )
+    service = AsyncPlanEnforcementService(repo)
+
+    decision = await service.enforce(
+        organization_id="org_1",
+        dimension=UsageDimension.SOURCES,
+        requested_quantity=1,
+    )
+
+    assert decision.allowed is True
+    assert (
+        repo.usage_quantity(
+            organization_id="org_1",
+            dimension=UsageDimension.SOURCES,
+        )
+        == 1
+    )
+
+
+def test_sql_state_backend_wires_durable_billing_repository() -> None:
+    app = create_app(
+        Settings(
+            cortex_state_backend="sql",
+            database_url="postgresql+asyncpg://localhost/cortex",
+        )
+    )
+
+    assert isinstance(app.state.billing_repository, SqlAlchemyBillingRepository)
+    assert isinstance(app.state.plan_enforcement, AsyncPlanEnforcementService)

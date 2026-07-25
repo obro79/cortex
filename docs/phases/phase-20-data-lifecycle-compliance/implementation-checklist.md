@@ -1,13 +1,13 @@
 # Phase 20 Implementation Checklist
 
-- [ ] Add workspace deletion workflow.
-- [ ] Add source deletion workflow.
+- [x] Add workspace deletion workflow.
+- [x] Add source deletion workflow.
 - [ ] Add user deletion/deactivation/anonymization workflow.
 - [x] Add retention policy configuration.
 - [x] Add retention sweep job.
 - [x] Add export job.
 - [x] Add deletion tombstones.
-- [ ] Add derived index cleanup/rebuild behavior.
+- [x] Add derived index cleanup behavior.
 - [ ] Add secret rotation procedures.
 - [ ] Add security review artifact packet.
 - [ ] Add privacy/security docs.

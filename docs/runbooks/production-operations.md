@@ -7,6 +7,10 @@ This runbook defines the minimum hosted beta operating model for Cortex.
 - `api`: stateless FastAPI service behind managed HTTPS ingress.
 - `worker-pipeline`: Kafka consumer group for normalization, chunking,
   embedding, and downstream pipeline events.
+- `worker-lifecycle`: queued deletion/export worker for lifecycle compliance
+  jobs.
+- `worker-provider-acl`: scheduled provider ACL snapshot refresh and freshness
+  reporting worker.
 - `migrate`: explicit one-shot Alembic migration job.
 - Postgres: source of truth for tenant, connector, audit, job, retrieval, and
   billing/lifecycle state.
@@ -32,7 +36,11 @@ Deploy order:
 2. Run `migrate` once against the target database.
 3. Deploy `api`.
 4. Deploy `worker-pipeline`.
-5. Verify readiness, worker logs, Kafka topic access, and connector smoke.
+5. Deploy `worker-lifecycle` when lifecycle queueing is enabled.
+6. Deploy `worker-provider-acl` on a schedule or worker cron after provider ACL
+   refresh targets and token env vars are configured.
+7. Verify readiness, worker logs, Kafka topic access, lifecycle queue drain,
+   provider ACL freshness, and connector smoke.
 
 ## Migration Strategy
 
@@ -52,6 +60,8 @@ Minimum alert rules:
 - Postgres connection exhaustion or sustained error rate.
 - Payload/object storage write failures.
 - Provider webhook signature failures above baseline.
+- Provider ACL stale or missing snapshot alerts above baseline.
+- Lifecycle deletion/export failures or stuck leases.
 - Error rate above beta SLO by service.
 
 ## Support Diagnostics
@@ -73,6 +83,13 @@ Support diagnostics must not include:
 - unredacted customer object IDs when a hash is sufficient.
 
 ## Load And Cost Tests
+
+No-secret local gate:
+
+- `uv run python scripts/backend_ops_launch_gate.py --list` prints the backend
+  and operations checks that can run without live secrets.
+- `uv run python scripts/backend_ops_launch_gate.py --evidence docs/operations/evidence/<date>-backend-ops-launch-gate-local-evidence.md`
+  records local-only evidence. This does not replace staging drill evidence.
 
 Beta load test:
 

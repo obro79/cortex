@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from cortex.api.app import create_app
@@ -27,3 +28,13 @@ def test_dev_workbench_available_when_enabled() -> None:
     response = client.get("/dev/workbench")
     assert response.status_code == 200
     assert "Cortex Dev Workbench" in response.text
+
+
+def test_dev_workbench_rejected_outside_local_or_test() -> None:
+    with pytest.raises(ValueError, match="dev workbench cannot be enabled"):
+        create_app(
+            Settings(
+                cortex_env="staging",
+                cortex_dev_workbench_enabled=True,
+            )
+        )

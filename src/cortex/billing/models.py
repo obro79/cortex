@@ -56,6 +56,13 @@ class Subscription:
     current_period_end: datetime | None
     created_at: datetime
     updated_at: datetime
+    provider: str = "stripe"
+    trial_start: datetime | None = None
+    trial_end: datetime | None = None
+    cancel_at: datetime | None = None
+    canceled_at: datetime | None = None
+    grace_period_ends_at: datetime | None = None
+    provider_updated_at: datetime | None = None
     metadata_json: dict[str, object] = field(default_factory=dict)
 
 

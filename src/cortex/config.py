@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     cortex_provider_rate_limit_window_seconds: int = Field(
         default=60, alias="CORTEX_PROVIDER_RATE_LIMIT_WINDOW_SECONDS"
     )
+    cortex_provider_acl_refresh_targets_json: str = Field(
+        default="", alias="CORTEX_PROVIDER_ACL_REFRESH_TARGETS_JSON"
+    )
+    cortex_provider_acl_principal_mappings_json: str = Field(
+        default="", alias="CORTEX_PROVIDER_ACL_PRINCIPAL_MAPPINGS_JSON"
+    )
+    cortex_provider_acl_refresh_lease_ttl_seconds: int = Field(
+        default=600, alias="CORTEX_PROVIDER_ACL_REFRESH_LEASE_TTL_SECONDS"
+    )
+    cortex_provider_acl_snapshot_ttl_hours: int = Field(
+        default=24, alias="CORTEX_PROVIDER_ACL_SNAPSHOT_TTL_HOURS"
+    )
     cortex_model_rate_limit_enabled: bool = Field(
         default=False, alias="CORTEX_MODEL_RATE_LIMIT_ENABLED"
     )
@@ -105,6 +117,12 @@ class Settings(BaseSettings):
         default="", alias="GITHUB_INSTALLATION_TOKEN"
     )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
+    stripe_api_key: str = Field(default="", alias="STRIPE_API_KEY")
+    stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
+    stripe_price_id: str = Field(default="", alias="STRIPE_PRICE_ID")
+    stripe_success_url: str = Field(default="", alias="STRIPE_SUCCESS_URL")
+    stripe_cancel_url: str = Field(default="", alias="STRIPE_CANCEL_URL")
+    stripe_portal_return_url: str = Field(default="", alias="STRIPE_PORTAL_RETURN_URL")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     cortex_secret_encryption_key: str = Field(
         default="", alias="CORTEX_SECRET_ENCRYPTION_KEY"
@@ -120,6 +138,7 @@ class Settings(BaseSettings):
     payload_store_path: str = Field(default="", alias="PAYLOAD_STORE_PATH")
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
+    qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
     redis_url: str = Field(default="", alias="REDIS_URL")
     otel_exporter_otlp_endpoint: str = Field(
         default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
