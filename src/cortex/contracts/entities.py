@@ -89,6 +89,8 @@ class SourceFile(EntityModel):
     content_type: str | None = None
     storage_ref: str | None = None
     content_hash: str | None = None
+    ocr_text: str | None = None
+    ocr_text_hash: str | None = None
     metadata_json: JsonObject = Field(default_factory=dict)
     status: SourceObjectStatus = SourceObjectStatus.ACTIVE
     trace_id: str | None = None

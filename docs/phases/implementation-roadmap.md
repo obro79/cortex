@@ -309,6 +309,37 @@ Validation:
 - Failed event retry/deadletter test.
 - Real Slack data reaches the same retrieval/gate path proven by fixtures.
 
+## Phase 8.5: Slack Connector Review And Manual Testing
+
+Goal: stop after the first real-data connector and prove the implementation is
+understandable, reviewable, safe, and manually verified before adding more
+providers.
+
+Deliverables:
+
+- Full code review of Phase 8 commits and diff boundaries.
+- Data-flow map from Slack OAuth/backfill/webhooks to raw events, source
+  objects, retrieval, context gate, and canonical memory.
+- Manual Slack install/source-selection/backfill/webhook walkthrough.
+- Visual/manual confirmation of connector health, source coverage, retrieval
+  evidence, and context-gate output.
+- Security/redaction audit for tokens, signing secrets, Slack message text,
+  private URLs, file names, raw payloads, logs, events, and API responses.
+- Replay/idempotency drill using real-shaped Slack events.
+- Failure-mode drill for webhook signature failure, cursor resume,
+  rate-limit/retry, deadletter, revoked token/scope drift, and unselected
+  channel events.
+- Review report with ship/block decision, bugs found, screenshots/run logs, and
+  fixes required before Phase 9.
+
+Validation:
+
+- Manual review checklist completed.
+- Security/redaction checks pass or block with concrete fixes.
+- Real or recorded-real Slack run evidence is attached in run logs.
+- Architecture/data-flow map matches code paths.
+- No Phase 9 implementation starts until Phase 8.5 is approved.
+
 ## Phase 9: Linear + GitHub + Repo Docs
 
 Goal: connect task intent and implementation evidence to Slack decisions.

@@ -1,0 +1,74 @@
+version: retrieval-config-v1
+
+chunking:
+  version: chunking-v1
+  global_min_chunk_tokens: 120
+  global_max_chunk_tokens: 1200
+
+  docs:
+    strategy: markdown_heading_sections
+    target_tokens: 800
+    overlap_tokens: 100
+
+  slack_thread:
+    strategy: overview_plus_message_windows
+    target_tokens: 600
+    message_overlap_count: 1
+
+  linear_issue:
+    strategy: overview_plus_comment_groups
+    target_tokens: 700
+    comment_overlap_count: 1
+
+  github_pr:
+    strategy: overview_plus_review_sections
+    target_tokens: 900
+
+  ocr:
+    strategy: metadata_plus_ocr_text
+    target_tokens: 600
+    overlap_tokens: 100
+
+embeddings:
+  version: gemini-1536-v1
+  dev_provider: deterministic
+  prod_provider: gemini
+  prod_model: gemini-embedding-001
+  prod_dimensions: 1536
+  batch_size: 32
+
+candidate_retrieval:
+  version: candidate-retrieval-v1
+  fts_candidate_limit: 50
+  vector_candidate_limit: 50
+  relationship_expansion_limit: 20
+  merged_candidate_limit: 75
+  final_evidence_limit: 12
+  max_chunks_per_source_object: 3
+
+ranking:
+  version: ranking-v1
+  vector_weight: 0.45
+  lexical_weight: 0.30
+  recency_weight: 0.10
+  relationship_weight: 0.10
+  source_authority_weight: 0.05
+  canonical_decision_boost: 0.20
+
+token_budget:
+  version: token-budget-v1
+  max_evidence_pack_tokens: 4000
+  max_claims: 8
+  max_citations_per_claim: 3
+  max_snippet_tokens: 180
+  max_missing_context_items: 5
+  max_conflict_items: 5
+
+context_gate:
+  version: gate-v1
+  high_confidence_conflict_threshold: 0.80
+  stale_context_days: 90
+  min_required_sources_for_high_risk_tasks: 2
+  block_on_permission_uncertainty: true
+  block_on_high_confidence_architecture_conflict: true
+  warn_on_missing_low_risk_context: true
