@@ -26,6 +26,19 @@ def build_evidence_pack(repository: FixtureRepository) -> dict[str, Any]:
         }
         for chunk in repository.source_chunks.values()
     ]
+    provider_coverage = {
+        provider: True
+        for provider in sorted(
+            {
+                source_object.provider
+                for source_object in repository.source_objects.values()
+            }
+        )
+    }
+    media_coverage = {
+        str(source_file.metadata_json["media_kind"]): True
+        for source_file in repository.source_files.values()
+    }
     return {
         "id": EVIDENCE_PACK_ID,
         "workspace_id": WORKSPACE_ID,
@@ -36,7 +49,8 @@ def build_evidence_pack(repository: FixtureRepository) -> dict[str, Any]:
                 "claim": "Postgres is the approved session source of truth.",
                 "citation_ids": [
                     "cite-slack-thread-sessions-postgres",
-                    "cite-slack-file-session-flow-diagram",
+                    "cite-slack-huddle-session-rollout-caption",
+                    "cite-gdrive-session-migration-brief",
                 ],
             },
             {
@@ -48,13 +62,8 @@ def build_evidence_pack(repository: FixtureRepository) -> dict[str, Any]:
             },
         ],
         "citations": citations,
-        "source_coverage": {
-            "slack": True,
-            "diagram_ocr": True,
-            "linear": True,
-            "github": True,
-            "repo_docs": True,
-        },
+        "source_coverage": provider_coverage,
+        "media_coverage": media_coverage,
         "permission_exclusions": [],
         "missing_context": [],
         "stale_evidence": ["repo-doc-session-storage"],

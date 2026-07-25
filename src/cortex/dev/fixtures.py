@@ -35,7 +35,7 @@ class FixtureDefinition:
     content: str
     source_kind: str
     is_stale: bool = False
-    creates_file: bool = False
+    media_kind: str | None = None
 
 
 FIXTURES: tuple[FixtureDefinition, ...] = (
@@ -50,18 +50,62 @@ FIXTURES: tuple[FixtureDefinition, ...] = (
         source_kind="slack_decision",
     ),
     FixtureDefinition(
-        fixture_id="slack-file-session-flow-diagram",
+        fixture_id="slack-huddle-session-rollout-caption",
         provider="slack",
-        object_type="diagram_file",
-        title="Session flow diagram OCR",
-        citation_label="Slack diagram session-flow.png OCR",
-        citation_url="https://fixtures.local/slack/session-flow-diagram",
+        object_type="huddle_recording",
+        title="Session rollout huddle caption",
+        citation_label="Slack session rollout caption",
+        citation_url="https://fixtures.local/slack/session-rollout-caption",
         content=(
-            "OCR: browser writes session token, middleware validates Postgres "
-            "session, API loads user."
+            "Fixture deterministic caption, not live OCR or transcription: "
+            "browser writes the session token, middleware validates the Postgres "
+            "session, and the API loads the user."
         ),
-        source_kind="diagram_ocr",
-        creates_file=True,
+        source_kind="slack_caption",
+        media_kind="caption",
+    ),
+    FixtureDefinition(
+        fixture_id="slack-thread-rollout-owners",
+        provider="slack",
+        object_type="slack_thread",
+        title="Rollout owners for COR-123",
+        citation_label="Slack #architecture rollout owners",
+        citation_url="https://fixtures.local/slack/rollout-owners",
+        content=(
+            "The COR-123 rollout owner will verify middleware fallback behavior "
+            "before the Postgres session change is enabled."
+        ),
+        source_kind="slack_coordination",
+    ),
+    FixtureDefinition(
+        fixture_id="gdrive-session-migration-brief",
+        provider="google_drive",
+        object_type="document",
+        title="Session migration brief",
+        citation_label="Google Drive session migration brief",
+        citation_url="https://fixtures.local/gdrive/session-migration-brief",
+        content=(
+            "Fixture deterministic caption, not live OCR or transcription: the "
+            "migration brief identifies Postgres as the durable session store and "
+            "requires the Redis fallback retirement plan."
+        ),
+        source_kind="gdrive_brief",
+        media_kind="caption",
+    ),
+    FixtureDefinition(
+        fixture_id="gdrive-design-review-video",
+        provider="google_drive",
+        object_type="video_recording",
+        title="Session design review video transcript",
+        citation_label="Google Drive session design review transcript",
+        citation_url="https://fixtures.local/gdrive/session-design-review-video",
+        content=(
+            "Fixture deterministic video transcript, not live OCR or transcription: "
+            "the design review confirms Postgres session reads after the fallback "
+            "acceptance decision."
+        ),
+        source_kind="gdrive_video_transcript",
+        media_kind="video_transcript",
     ),
     FixtureDefinition(
         fixture_id="linear-issue-COR-123",
@@ -97,6 +141,19 @@ FIXTURES: tuple[FixtureDefinition, ...] = (
             "PR 184 migrates session writes to Postgres but keeps Redis read fallback."
         ),
         source_kind="github_pr",
+    ),
+    FixtureDefinition(
+        fixture_id="jira-ticket-SES-42",
+        provider="jira",
+        object_type="issue",
+        title="SES-42 validate Redis fallback retirement",
+        citation_label="Jira SES-42",
+        citation_url="https://fixtures.local/jira/SES-42",
+        content=(
+            "SES-42 tracks acceptance criteria for removing the Redis session "
+            "read fallback after COR-123 validation."
+        ),
+        source_kind="jira_task",
     ),
     FixtureDefinition(
         fixture_id="repo-doc-session-storage",
@@ -161,6 +218,15 @@ class FixtureRepository:
         return self.summary()
 
     def summary(self) -> dict[str, Any]:
+        provider_counts: dict[str, int] = {}
+        for source_object in self.source_objects.values():
+            provider_counts[source_object.provider] = (
+                provider_counts.get(source_object.provider, 0) + 1
+            )
+        media_counts: dict[str, int] = {}
+        for source_file in self.source_files.values():
+            media_kind = str(source_file.metadata_json["media_kind"])
+            media_counts[media_kind] = media_counts.get(media_kind, 0) + 1
         return {
             "workspace_id": WORKSPACE_ID,
             "fixture_ids": fixture_ids(),
@@ -180,6 +246,8 @@ class FixtureRepository:
                 "embeddings": len(self.embeddings),
                 "relationships": len(self.relationships),
             },
+            "provider_counts": dict(sorted(provider_counts.items())),
+            "media_counts": dict(sorted(media_counts.items())),
         }
 
     def seeded(self) -> bool:
@@ -244,7 +312,7 @@ class FixtureRepository:
             updated_at=FIXTURE_TIME,
         )
         source_file_id = None
-        if fixture.creates_file:
+        if fixture.media_kind is not None:
             source_file_id = f"file-{fixture.fixture_id}"
             self.source_files[source_file_id] = SourceFile(
                 id=source_file_id,
@@ -254,12 +322,21 @@ class FixtureRepository:
                 provider=fixture.provider,
                 external_file_id=fixture.fixture_id,
                 external_object_key=f"{fixture.provider}:{fixture.fixture_id}",
-                file_name_hash=stable_hash("session-flow.png"),
-                content_type="image/png",
+                file_name_hash=stable_hash(
+                    f"{fixture.fixture_id}.{fixture.media_kind}"
+                ),
+                content_type=(
+                    "text/vtt" if fixture.media_kind == "caption" else "text/plain"
+                ),
                 storage_ref=f"fixture://files/{fixture.fixture_id}",
                 content_hash=content_hash,
                 metadata_json={
-                    "ocr_fixture": True,
+                    "fixture": True,
+                    "deterministic": True,
+                    "media_kind": fixture.media_kind,
+                    "provenance": (
+                        "fixture/deterministic; not live OCR or transcription"
+                    ),
                     "citation_label": fixture.citation_label,
                 },
                 trace_id="trace-dev-cor-123",
@@ -271,7 +348,7 @@ class FixtureRepository:
             workspace_id=WORKSPACE_ID,
             source_object_id=source_object_id,
             source_file_id=source_file_id,
-            chunk_type="ocr_text" if fixture.creates_file else fixture.object_type,
+            chunk_type=fixture.media_kind or fixture.object_type,
             chunk_index=0,
             text=fixture.content,
             text_hash=stable_hash(fixture.content),

@@ -42,10 +42,20 @@ class CandidateRanker:
                     candidate.source_authority_score,
                 ),
                 paths=existing.paths | candidate.paths,
+                score_provenance={
+                    **existing.score_provenance,
+                    **{
+                        name: max(float(existing.score_provenance.get(name, 0)), value)
+                        for name, value in candidate.score_provenance.items()
+                    },
+                },
             )
         per_source: dict[str, int] = defaultdict(int)
         ranked = []
-        for candidate in sorted(merged.values(), key=self.score, reverse=True):
+        for candidate in sorted(
+            merged.values(),
+            key=lambda candidate: (-self.score(candidate), candidate.id),
+        ):
             source_id = candidate.source_chunk.source_object_id
             if per_source[source_id] >= max_per_source_object:
                 continue

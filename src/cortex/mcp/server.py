@@ -1,3 +1,7 @@
+import asyncio
+import json
+import sys
+from collections.abc import Mapping
 from typing import Any
 
 from cortex.canonical_memory.publishers import CanonicalDecisionPublisher
@@ -10,6 +14,7 @@ from cortex.context_gate.publishers import ContextGatePublisher
 from cortex.context_gate.repositories import InMemoryContextGateResultRepository
 from cortex.context_gate.service import ContextGateService
 from cortex.events.in_memory import InMemoryEventBus
+from cortex.handoff import create_handoff_bundle
 from cortex.retrieval.defaults import create_empty_retrieval_service
 
 TOOL_NAMES = (
@@ -18,7 +23,10 @@ TOOL_NAMES = (
     "check_context_gate",
     "propose_canonical_decision",
     "approve_canonical_decision",
+    "create_handoff_bundle",
 )
+
+MCP_PROTOCOL_VERSION = "2024-11-05"
 
 _canonical_decisions = InMemoryCanonicalDecisionRepository()
 _approval_records = InMemoryApprovalRecordRepository()
@@ -49,6 +57,8 @@ async def call_tool(
 ) -> dict[str, Any]:
     if name not in TOOL_NAMES:
         return {"ok": False, "error": "unknown_tool", "tool": name}
+    if name == "create_handoff_bundle":
+        return create_handoff_bundle(arguments or {})
     if name in {"retrieve_context", "get_related_work"}:
         args = arguments or {}
         allowed = {"workspace_id", "query", "source_allowlist", "provider_filters"}
@@ -193,3 +203,143 @@ async def call_tool(
         "reason": "not_implemented",
         "arguments": arguments or {},
     }
+
+
+def list_tool_definitions() -> list[dict[str, object]]:
+    """Return MCP tool metadata, including the portable handoff contract."""
+    definitions: list[dict[str, object]] = [
+        {
+            "name": name,
+            "description": f"Cortex tool: {name}.",
+            "inputSchema": {"type": "object"},
+        }
+        for name in TOOL_NAMES
+    ]
+    handoff = next(
+        item for item in definitions if item["name"] == "create_handoff_bundle"
+    )
+    handoff.update(
+        {
+            "description": (
+                "Create a portable handoff bundle from an approved summary and "
+                "evidence references. Never accesses agent sessions."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["approved_summary"],
+                "properties": {
+                    "approved_summary": {"type": "string", "minLength": 1},
+                    "evidence_references": {
+                        "type": "array",
+                        "items": {"type": ["string", "object"]},
+                    },
+                    "opaque_handles": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "handoff_opt_in": {"type": "boolean"},
+                },
+            },
+        }
+    )
+    return definitions
+
+
+def _json_rpc_error(request_id: object, code: int, message: str) -> dict[str, object]:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {"code": code, "message": message},
+    }
+
+
+def _is_valid_request_id(value: object) -> bool:
+    """Return whether a JSON-RPC request id can be echoed safely."""
+    return value is None or (
+        isinstance(value, (str, int)) and not isinstance(value, bool)
+    )
+
+
+def _is_valid_method(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+async def handle_json_rpc_message(message: object) -> dict[str, object] | None:
+    """Handle one JSON-RPC 2.0 request for the newline-delimited stdio server."""
+    if not isinstance(message, Mapping) or message.get("jsonrpc") != "2.0":
+        return _json_rpc_error(None, -32600, "Invalid Request")
+
+    request_id = message.get("id")
+    is_notification = "id" not in message
+    method = message.get("method")
+    params = message.get("params", {})
+    if not is_notification and not _is_valid_request_id(request_id):
+        return _json_rpc_error(None, -32600, "Invalid Request")
+    if not _is_valid_method(method):
+        if is_notification:
+            return None
+        return _json_rpc_error(request_id, -32600, "Invalid Request")
+    if not isinstance(params, Mapping):
+        if is_notification:
+            return None
+        return _json_rpc_error(request_id, -32602, "Invalid params")
+
+    if method == "initialize":
+        result: dict[str, object] = {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "cortex-mcp", "version": "0.1.0"},
+        }
+    elif method == "tools/list":
+        result = {"tools": list_tool_definitions()}
+    elif method == "tools/call":
+        name = params.get("name")
+        arguments = params.get("arguments", {})
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or not isinstance(arguments, Mapping)
+        ):
+            if is_notification:
+                return None
+            return _json_rpc_error(request_id, -32602, "Invalid params")
+        response = await call_tool(name, dict(arguments))
+        result = {
+            "content": [{"type": "text", "text": json.dumps(response, sort_keys=True)}],
+            "structuredContent": response,
+            "isError": not response.get("ok", False),
+        }
+    else:
+        if is_notification:
+            return None
+        return _json_rpc_error(request_id, -32601, "Method not found")
+
+    if is_notification:
+        return None
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+async def serve_stdio() -> None:
+    """Serve newline-delimited JSON-RPC over stdin/stdout without session access."""
+    for line in sys.stdin:
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            response: dict[str, object] | None = _json_rpc_error(
+                None, -32700, "Parse error"
+            )
+        else:
+            response = await handle_json_rpc_message(message)
+        if response is not None:
+            sys.stdout.write(json.dumps(response, sort_keys=True) + "\n")
+            sys.stdout.flush()
+
+
+def main() -> None:
+    """Console-script entry point for the local MCP stdio server."""
+    asyncio.run(serve_stdio())
+
+
+if __name__ == "__main__":
+    main()

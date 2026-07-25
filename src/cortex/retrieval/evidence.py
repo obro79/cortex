@@ -52,6 +52,14 @@ class EvidencePackBuilder:
             "candidate_summary_json": {
                 "candidate_count": len(candidates),
                 "versions": versions,
+                "selected_candidates": [
+                    {
+                        "source_chunk_id": candidate.source_chunk.id,
+                        "sources": sorted(candidate.paths),
+                        "scores": dict(sorted(candidate.score_provenance.items())),
+                    }
+                    for candidate in selected
+                ],
             },
             "source_coverage_json": {
                 "providers": providers,

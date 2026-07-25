@@ -18,7 +18,8 @@ def test_case_study_route_is_public_and_redacted() -> None:
 
     assert response.status_code == 200
     assert "Evidence-aware knowledge infrastructure" in response.text
-    assert "Slack, Linear, GitHub, and repo-doc" in response.text
+    assert "10-record deterministic demo fixture" in response.text
+    assert "not live provider data" in response.text
     assert "allow/warn/block" in response.text
-    assert "ADR-023" in response.text
+    assert "portable, opt-in" in response.text
     assert "xoxb" not in response.text

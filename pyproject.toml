@@ -31,6 +31,7 @@ dev = [
 [project.scripts]
 cortex = "cortex.cli.main:app"
 cortex-worker = "cortex.workers.main:app"
+cortex-mcp = "cortex.mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]

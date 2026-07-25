@@ -222,8 +222,8 @@ def render_case_study_html() -> str:
       <h1>Cortex</h1>
       <p class="lede">
         Evidence-aware knowledge infrastructure for engineering teams. Cortex
-        turns Slack, Linear, GitHub, and repo-doc context into cited evidence
-        packs and gates risky implementation work before an agent starts.
+        turns connected-workspace context into cited evidence packs and gates
+        risky implementation work before an agent starts.
       </p>
       <div class="pill-row">
         <span class="pill">FastAPI</span>
@@ -231,6 +231,7 @@ def render_case_study_html() -> str:
         <span class="pill">Postgres source of truth</span>
         <span class="pill">Hybrid retrieval</span>
         <span class="pill">allow/warn/block gate</span>
+        <span class="pill">10-record deterministic demo fixture</span>
       </div>
     </div>
     <aside class="hero-panel" aria-label="Demo proof summary">
@@ -240,7 +241,8 @@ def render_case_study_html() -> str:
       </div>
       <div class="signal">
         <div class="label">Evidence</div>
-        <div>Slack decision, Linear issue, GitHub PR, diagram OCR, repo docs.</div>
+        <div>Slack, Linear, GitHub, Drive, Jira, repo docs, and fixture media
+        sidecars.</div>
       </div>
       <div class="signal">
         <div class="label">Gate</div>
@@ -249,7 +251,7 @@ def render_case_study_html() -> str:
       </div>
       <div class="signal">
         <div class="label">Artifact</div>
-        <div>Public case study plus ADR-023 tradeoff record.</div>
+        <div>Local deterministic proof screen — not live provider data.</div>
       </div>
     </aside>
   </header>
@@ -258,7 +260,8 @@ def render_case_study_html() -> str:
     <h2>Problem</h2>
     <p>
       Engineering context is scattered across Slack decisions, Linear tickets,
-      GitHub PRs, repo docs, diagrams, and run logs. Agents and engineers miss
+      GitHub PRs, Drive docs, Jira work, repo docs, diagrams, and run logs.
+      Agents and engineers miss
       old constraints, stale docs, and rollout blockers because the system of
       record is split across tools.
     </p>
@@ -268,16 +271,16 @@ def render_case_study_html() -> str:
     <h2>What I Built</h2>
     <div class="grid">
       <div class="tile">
-        <div class="metric">6</div>
-        <div class="muted">deterministic COR-123 source fixtures</div>
-      </div>
-      <div class="tile">
         <div class="metric">10</div>
-        <div class="muted">pipeline stages from ingest to gate</div>
+        <div class="muted">deterministic COR-123 source-object fixtures</div>
       </div>
       <div class="tile">
-        <div class="metric warn">3</div>
-        <div class="muted">explicit relationship seeds in the demo path</div>
+        <div class="metric">3</div>
+        <div class="muted">fixture media sidecars: 2 captions, 1 transcript</div>
+      </div>
+      <div class="tile">
+        <div class="metric warn">10</div>
+        <div class="muted">pipeline stages from ingest to gate</div>
       </div>
       <div class="tile">
         <div class="metric block">block</div>
@@ -297,6 +300,8 @@ def render_case_study_html() -> str:
             <li>Slack</li>
             <li>Linear</li>
             <li>GitHub</li>
+            <li>Google Drive</li>
+            <li>Jira</li>
             <li>Repo docs</li>
           </ul>
         </div>
@@ -320,7 +325,7 @@ def render_case_study_html() -> str:
           <h3>Workers</h3>
           <ul>
             <li>normalize</li>
-            <li>chunk + OCR</li>
+            <li>chunk + fixture sidecars</li>
             <li>embed + link</li>
           </ul>
         </div>
@@ -364,8 +369,8 @@ def render_case_study_html() -> str:
         record.</p>
       </div>
       <div class="step">
-        <p>Workers persist records, chunk text, extract diagram OCR, create
-        embeddings, and build deterministic links.</p>
+        <p>Workers persist records, chunk text, attach fixture media sidecars,
+        create embeddings, and build deterministic links.</p>
       </div>
       <div class="step">
         <p>Retrieval merges lexical, vector, and relationship candidates while
@@ -384,9 +389,9 @@ def render_case_study_html() -> str:
       <div class="tile">
         <h3>Retrieval Inspector</h3>
         <pre>query: COR-123 session migration constraints
-providers: slack, linear, github, repo_docs
+providers: slack, linear, github, google_drive, jira, repo_docs
 evidence_pack_id: ep-cor-123
-expected_sources: 6
+fixture_records: 10
 gate_status: block</pre>
       </div>
       <div class="tile">
@@ -394,13 +399,13 @@ gate_status: block</pre>
         <pre>status: block
 risk_category: architecture_conflict
 reason: stale repo docs conflict with newer
-        Slack/GitHub/Linear session decisions
+        Slack/GitHub/Linear/Drive/Jira evidence
 required_action: resolve Redis fallback rollout</pre>
       </div>
       <div class="tile">
         <h3>Worker Trace</h3>
         <pre>seed -> ingest -> kafka_event -> normalize
--> chunk_ocr -> embed -> index -> link
+-> chunk_ocr (fixture sidecars) -> embed -> index -> link
 -> retrieve -> gate
 trace_id: trace-run-cor-123-001</pre>
       </div>
@@ -411,6 +416,8 @@ mrr: 1.0
 citation_accuracy: 1.0
 conflict_detection: 1.0
 gate_accuracy: 1.0</pre>
+        <p class="muted">Deterministic fixture evaluation, not a production
+        benchmark.</p>
       </div>
     </div>
   </section>
@@ -418,10 +425,11 @@ gate_accuracy: 1.0</pre>
   <section>
     <h2>MCP Tool Surface</h2>
     <p>
-      The MCP-facing surface is intentionally narrow: retrieve context, get
-      related work, check the context gate, propose a canonical decision, and
-      approve a canonical decision. The product claim is not "another chat UI."
-      The claim is that agents get structured, cited context before they act.
+      The MCP-facing surface is intentionally narrow: local fixture retrieval
+      and a portable, opt-in handoff bundle are available today. Production-safe
+      retrieval composition still requires a durable runtime. The product claim
+      is not "another chat UI." The claim is that agents get structured, cited
+      context before they act.
     </p>
   </section>
 
@@ -439,8 +447,9 @@ gate_accuracy: 1.0</pre>
         </tr>
         <tr>
           <td>chunks indexed</td>
-          <td>6 COR-123 fixture chunks with citations</td>
-          <td>Source-aware chunking and citation preservation</td>
+          <td>10 deterministic source-object fixture chunks; 3 media SourceFile
+          records</td>
+          <td>Fixture coverage and citation preservation, not a live index claim</td>
         </tr>
         <tr>
           <td>retrieval p50/p95</td>
