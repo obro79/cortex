@@ -9,11 +9,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlparse
+
+from cortex.demo_runs.contracts import (
+    APPROVED_REPORT_DISCLOSURES,
+    APPROVED_REPORT_NEXT_ACTIONS,
+)
 
 REPORT_SCHEMA_VERSION: Final = "live-context-preflight/v1"
 LIVE_REPORT_SCHEMA_VERSION: Final = "live-context-run-report/v1"
@@ -46,6 +52,9 @@ _COUNT_FIELDS: Final = (
     "evidence_packs",
     "failures",
 )
+_OPAQUE_SHA256: Final = re.compile(r"^sha256:[A-Fa-f0-9]{64}$")
+_STAGE_CODE: Final = re.compile(r"^[a-z][a-z0-9_:-]*$")
+_URL_LIKE: Final = re.compile(r"(?:[a-z][a-z0-9+.-]*://|www\.)", re.IGNORECASE)
 
 
 def _present(name: str) -> bool:
@@ -226,15 +235,13 @@ def validate_live_run_report(report: object) -> list[str]:
         errors.append("live_data must be true")
     if report.get("provider") != "slack":
         errors.append("provider must be slack for this proof slice")
-    for field in (
-        "run_id_hash",
-        "source_ref_hash",
-        "collection",
-        "environment",
-        "disclosure",
-    ):
+    for field in ("collection", "environment", "disclosure"):
         if not isinstance(report.get(field), str) or not report.get(field):
             errors.append(f"{field} must be a non-empty string")
+    for field in ("run_id_hash", "source_ref_hash"):
+        value = report.get(field)
+        if not isinstance(value, str) or not _OPAQUE_SHA256.fullmatch(value):
+            errors.append(f"{field} must be an opaque sha256 hash")
     counts = report.get("counts")
     if not isinstance(counts, dict):
         errors.append("counts must be an object")
@@ -254,8 +261,39 @@ def validate_live_run_report(report: object) -> list[str]:
             for field in counts
             if field not in _COUNT_FIELDS
         )
-    if not isinstance(report.get("stages"), dict) or not report["stages"]:
+    stages = report.get("stages")
+    if not isinstance(stages, dict) or not stages:
         errors.append("stages must be a non-empty object of status codes")
+    elif len(stages) > 40:
+        errors.append("stages must contain at most 40 status codes")
+    else:
+        for stage, status_code in stages.items():
+            if (
+                not isinstance(stage, str)
+                or len(stage) > 80
+                or not _STAGE_CODE.fullmatch(stage)
+            ):
+                errors.append("stage names must be bounded lowercase status codes")
+                break
+            if (
+                not isinstance(status_code, str)
+                or len(status_code) > 80
+                or not _STAGE_CODE.fullmatch(status_code)
+            ):
+                errors.append("stage values must be bounded lowercase status codes")
+                break
+    for field in ("disclosure", "next_action"):
+        value = report.get(field)
+        if value is None and field == "next_action":
+            continue
+        if not isinstance(value, str) or "\n" in value or "\r" in value:
+            errors.append(f"{field} must be a single-line string")
+        elif _URL_LIKE.search(value):
+            errors.append(f"{field} must not contain a URL-like value")
+        elif field == "disclosure" and value not in APPROVED_REPORT_DISCLOSURES:
+            errors.append("disclosure must be an approved disclosure message")
+        elif field == "next_action" and value not in APPROVED_REPORT_NEXT_ACTIONS:
+            errors.append("next_action must be an approved next action")
     if "freshness_seconds" in report and (
         not isinstance(report["freshness_seconds"], int)
         or report["freshness_seconds"] < 0

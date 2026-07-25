@@ -52,3 +52,13 @@ pipeline and task-context stages finish. Use opaque hashes for run/source refs,
 the resolved Qdrant collection name, integer counters, freshness seconds, and
 status codes. Validate the serialized JSON with the command above before adding
 it to the demo packet.
+
+The SQL `demo_run_reports` projection can now durably store that validated,
+redacted snapshot and the read-only control plane will return it after restart.
+It is append-only at the application boundary; production deployment should
+grant its writer database role only insert/select access.
+It deliberately does **not** derive a report from current workspace-wide rows:
+doing that could mix unrelated runs. Before a report can be emitted
+automatically, the runtime still needs the exact run-membership ledger/finalizer
+described in the Live Context Proof specification. Until then, no stored report
+is evidence of a completed live run by itself.

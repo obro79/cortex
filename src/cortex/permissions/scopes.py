@@ -272,12 +272,30 @@ class SqlAlchemyPermissionScopeRepository:
         The returned service intentionally has no database handle; callers must
         materialize a new snapshot for each authorization request/batch.
         """
+        from cortex.permissions.provider_acls import (
+            InMemoryProviderAclRepository,
+            SqlAlchemyProviderAclRepository,
+        )
         from cortex.permissions.service import PermissionService
 
         snapshot = InMemoryPermissionScopeRepository.from_active_scopes(
             await self.list_active(workspace_id)
         )
-        return PermissionService(snapshot)
+        acl_snapshots = await SqlAlchemyProviderAclRepository(
+            self.session
+        ).list_current_snapshots(workspace_id)
+        # Provider ACLs are an optional second authorization layer.  A
+        # workspace with no configured/collected ACL snapshots retains its
+        # explicit source-selection scope policy; injecting an *empty* ACL
+        # repository would instead deny every Slack/GitHub/Linear chunk and
+        # make an otherwise valid selected-source deployment unusable.  Once
+        # any snapshot exists, missing/stale resources remain fail-closed.
+        provider_acls = (
+            InMemoryProviderAclRepository.from_snapshots(acl_snapshots)
+            if acl_snapshots
+            else None
+        )
+        return PermissionService(snapshot, provider_acls=provider_acls)
 
 
 class SqlAlchemyPermissionScopeService:

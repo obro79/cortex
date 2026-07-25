@@ -10,6 +10,7 @@ from cortex.api.routes.billing import router as billing_router
 from cortex.api.routes.case_study import router as case_study_router
 from cortex.api.routes.context import router as context_router
 from cortex.api.routes.demo import router as demo_router
+from cortex.api.routes.demo_runs import router as demo_runs_router
 from cortex.api.routes.dev import router as dev_router
 from cortex.api.routes.github import router as github_router
 from cortex.api.routes.health import router as health_router
@@ -34,6 +35,7 @@ from cortex.connectors.linear.service import LinearConnectorServices
 from cortex.connectors.repo_docs.service import RepoDocsConnectorServices
 from cortex.connectors.slack.service import create_slack_connector_services
 from cortex.db.session import create_sessionmaker
+from cortex.demo_runs import FixtureDemoRunReportReader, SqlAlchemyDemoRunReportStore
 from cortex.dev.workbench import DevWorkbenchService
 from cortex.events.bus import EventBus, KafkaEventBus
 from cortex.ingestion.durable import SessionRawEventIngestionService
@@ -75,6 +77,12 @@ def create_app(
         else None
     )
     app.state.session_factory = session_factory
+    if session_factory is not None:
+        # This exposes a read-only, durable projection to the API. The same
+        # object has an internal write seam for a future trusted finalizer;
+        # no HTTP or MCP route can write reports.
+        app.state.demo_run_report_store = SqlAlchemyDemoRunReportStore(session_factory)
+        app.state.demo_run_report_reader = app.state.demo_run_report_store
     if cortex_runtime is None and session_factory is not None and resolved.qdrant_url:
         # SQL is canonical and Qdrant only supplies derived vector candidates.
         # Permissions are materialized per request into an isolated snapshot;
@@ -159,6 +167,10 @@ def create_app(
     # This boundary intentionally has no in-memory fallback: deployers inject a
     # durable retrieval runtime, and disabled public auth remains explicit.
     app.include_router(context_router)
+    # The control-plane routes always report an explicit unavailable state until
+    # a durable reporter is installed.  Local fixture health is opt-in below;
+    # it never manufactures a `live_data: true` run report.
+    app.include_router(demo_runs_router)
     if resolved.cortex_dev_workbench_enabled and resolved.cortex_env not in {
         "local",
         "test",
@@ -166,6 +178,7 @@ def create_app(
         raise ValueError("dev workbench cannot be enabled outside local/test")
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
+        app.state.demo_run_report_reader = FixtureDemoRunReportReader()
         app.include_router(dev_router)
         app.include_router(demo_router)
     if resolved.cortex_ui_enabled:
