@@ -33,3 +33,6 @@ def test_get_task_context_is_registered_with_a_strict_schema() -> None:
 
     assert tool["inputSchema"]["additionalProperties"] is False
     assert "workspace_id" not in tool["inputSchema"]["properties"]
+    assert tool["description"].startswith(
+        "Pull bounded, permission-filtered company context"
+    )

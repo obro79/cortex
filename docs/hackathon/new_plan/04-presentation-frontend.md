@@ -114,8 +114,8 @@ type SourceSummary = {
     | "github"
     | "jira"
     | "email"
-    | "drive_docs"
-    | "claude_code";
+    | "google_drive"
+    | "agent_session";
   displayName: string;
   mode: SourceMode;
   status: "ready" | "presenting" | "waiting_live" | "error";
@@ -127,6 +127,10 @@ type SourceSummary = {
 
 Python schemas are canonical. TypeScript contracts are generated from or tested
 against backend OpenAPI/JSON fixtures; they may not drift silently.
+Visual identity is a separate, explicit mapping: `email` uses the Gmail mark
+only for a Gmail connection, `agent_session` uses the Anthropic mark without
+claiming it is an official Claude Code logo, and the connector-family Atlassian
+asset is not a seventh indexed source.
 
 ## Product shell
 

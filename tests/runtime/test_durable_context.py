@@ -26,7 +26,7 @@ def test_durable_retrieval_uses_shared_indexing_profile_collection() -> None:
 
     assert retrieval.vector_collection == settings.qdrant_collection_name(
         embedding_model="fixture-vector-v1",
-        embedding_version="gemini-1536-v1",
+        embedding_version="gemini2-1536-v1",
         dimensions=16,
     )
     assert retrieval.vector_collection != "fixture-cortex-dev"

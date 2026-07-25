@@ -120,7 +120,7 @@ def test_sql_dispatcher_uses_gemini_provider_when_embedding_mode_is_real(
 
     assert isinstance(provider, GeminiEmbeddingProvider)
     assert provider.api_key == "test-key"
-    assert provider.model == "gemini-embedding-001"
+    assert provider.model == "gemini-embedding-2"
     assert provider.dimensions == 1536
 
 

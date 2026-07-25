@@ -27,7 +27,7 @@
 
 | ID | Status | Ambiguity | Decision/default | Verification |
 | --- | --- | --- | --- | --- |
-| B-01 | BLOCKING | What are the exact 18 records? | Freeze stable IDs, timestamps, modes, decisive/distractor roles, task refs, and expected citations. | Manifest checksum. |
+| B-01 | LOCKED | What are the exact 18 records? | `fixtures/golden_incident/manifest.json`: six decisive, twelve distractors, seventeen pre-live, one live Slack transition. | Validated manifest checksum. |
 | B-02 | LOCKED | May fixtures insert into SQL? | No; all use `RawEventInput` and the shared pipeline. | Lineage test. |
 | B-03 | DEFAULTED | How is the live transition counted? | Preparation yields 17 records; signed Slack yields the decisive 18th. | Pre/post reports. |
 | B-04 | DEFAULTED | How is `COR-123` attached? | Explicit fixture metadata plus normal entity extraction. | Normalization assertion. |
@@ -43,7 +43,7 @@
 | A-02 | DEFAULTED | How is export triggered? | Explicit CLI plus optional session-end hook; no scraping. | CLI integration test. |
 | A-03 | LOCKED | What is identity? | `checkpoint_id + content_hash` using existing agent-session event identity. | Idempotency test. |
 | A-04 | DEFAULTED | What is exported? | Goal, completed work, decisions, blockers, next actions, file/task refs, bounded summary. | Schema/redaction test. |
-| A-05 | BLOCKING | Which MCP tool is demoed? | Default `get_task_context`; freeze tool name and JSON before recording. | Golden exchange fixture. |
+| A-05 | LOCKED | Which MCP tool is demoed? | The API-backed MCP exposes only `get_task_context`; the request/assertions are frozen in `fixtures/golden_incident/mcp_get_task_context.json`. | Golden exchange fixture. |
 | A-06 | DEFAULTED | Can UI say `Open in Claude Code`? | Only setup/copy instructions, not native session control. | Copy review. |
 | A-07 | DEFAULTED | Evidence-pack size? | Summary, at most six decisive citations, conflicts, freshness, and next actions. | Size assertion. |
 
@@ -53,7 +53,7 @@
 | --- | --- | --- | --- | --- |
 | R-01 | LOCKED | Is Qdrant local and hosted? | One adapter/collection contract; Compose first, hosted parity second. | Parity matrix. |
 | R-02 | EXTERNAL | Which hosted cluster? | Environment variables only; Compose until credentials arrive. | Hosted smoke report. |
-| R-03 | DEFAULTED | Which embedding profile? | Pin existing production profile; deterministic embeddings are test-only. | Collection metadata. |
+| R-03 | LOCKED | Which embedding profile? | `gemini-embedding-2`, 1536 dimensions, `gemini2-1536-v1`; deterministic embeddings remain test-only. | ADR 007 and collection metadata. |
 | R-04 | LOCKED | Does diversity replace relevance? | No; bounded post-fusion coverage boost retaining original scores/reasons. | Ranking provenance test. |
 | R-05 | DEFAULTED | Where does coverage apply? | Recognized task/entity retrieval only; generic search unchanged. | Regression queries. |
 | R-06 | DEFAULTED | Is graph global? | No; permission-filtered projection for one task. | Authenticated task API. |

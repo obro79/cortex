@@ -47,7 +47,7 @@ def test_real_profile_uses_compatible_document_query_embedding_contract() -> Non
     )
     assert document.task_type == "RETRIEVAL_DOCUMENT"
     assert query.task_type == "RETRIEVAL_QUERY"
-    assert profile.collection.endswith("gemini-embedding-001-gemini-1536-v1-1536")
+    assert profile.collection.endswith("gemini-embedding-2-gemini2-1536-v1-1536")
     assert "test-key" not in repr(profile)
 
 
@@ -123,8 +123,12 @@ async def test_real_profile_uses_distinct_compatible_document_and_query_calls() 
     )
 
     assert len(document_output.vector) == profile.dimensions
-    assert [request["taskType"] for request in requests] == [
-        "RETRIEVAL_DOCUMENT",
-        "RETRIEVAL_QUERY",
-    ]
-    assert requests[1]["content"] == {"parts": [{"text": "find service ownership"}]}
+    assert all("taskType" not in request for request in requests)
+    assert requests[0]["content"] == {
+        "parts": [{"text": "title: none | text: document body"}]
+    }
+    assert requests[1]["content"] == {
+        "parts": [
+            {"text": "task: search result | query: find service ownership"}
+        ]
+    }

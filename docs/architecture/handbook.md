@@ -394,8 +394,11 @@ workers must allow OpenAI or another provider without migration pain.
 Default:
 
 - Provider: Google Gemini
-- Model: `gemini-embedding-001`
-- Dimensions: 1536
+- Model: `gemini-embedding-2`
+- Version: `gemini2-1536-v1`
+- Dimensions: `1536`
+- Retrieval instructions: document and query prefixes are embedded in input
+  text; the deprecated `taskType` request field is not used.
 
 Every embedding record stores provider, model, dimensions, task type,
 content hash, vector hash, chunking version, retrieval index version, status,

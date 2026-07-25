@@ -19,6 +19,7 @@ ALLOWED_PROVIDERS = {
     "repo_docs",
     "google_drive",
     "jira",
+    "email",
     "agent_session",
     "fixture",
 }

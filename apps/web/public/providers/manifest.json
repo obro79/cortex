@@ -1,0 +1,83 @@
+{
+  "schema_version": "cortex.provider_assets.v1",
+  "captured_at": "2026-07-23",
+  "assets": [
+    {
+      "provider": "slack",
+      "backend_provider": "slack",
+      "display_name": "Slack",
+      "file": "slack.png",
+      "dimensions": "330x200",
+      "sha256": "2a6f2035201ba662a1591a115f710c378a3d24feaa13c47d8f783aa41ba066a6",
+      "source": "https://a.slack-edge.com/a533fe3/marketing/img/media-kit/img-logos-alt.png",
+      "guidelines": "https://slack.com/media-kit",
+      "provenance": "official-media-kit"
+    },
+    {
+      "provider": "github",
+      "backend_provider": "github",
+      "display_name": "GitHub",
+      "file": "github.png",
+      "dimensions": "256x256",
+      "sha256": "6b0a1c81aaf251924c121665b589dd650c950d06d1213c1d78a24390bcd3801e",
+      "source": "https://cdn.simpleicons.org/github",
+      "guidelines": "https://github.com/logos",
+      "provenance": "simple-icons-derivative"
+    },
+    {
+      "provider": "atlassian",
+      "backend_provider": null,
+      "display_name": "Atlassian",
+      "file": "atlassian.png",
+      "dimensions": "256x256",
+      "sha256": "47fa860d1392fd2798c114ac140598c591efce3790384551f62b28e953af26bf",
+      "source": "https://cdn.simpleicons.org/atlassian",
+      "guidelines": "https://www.atlassian.com/company/news/press-kit",
+      "provenance": "simple-icons-derivative"
+    },
+    {
+      "provider": "jira",
+      "backend_provider": "jira",
+      "display_name": "Jira",
+      "file": "jira.png",
+      "dimensions": "256x256",
+      "sha256": "a3a6b0f32f6800a39f4d07a625de8ec3fc79323a4c8f3b205bea29af3b1dd5bf",
+      "source": "https://cdn.simpleicons.org/jira",
+      "guidelines": "https://www.atlassian.com/company/news/press-kit",
+      "provenance": "simple-icons-derivative"
+    },
+    {
+      "provider": "google_drive",
+      "backend_provider": "google_drive",
+      "display_name": "Google Drive",
+      "file": "google-drive.png",
+      "dimensions": "256x256",
+      "sha256": "107a192daa97f603137459436cda711c1843e6871d1b87462cd21015149bbe39",
+      "source": "https://cdn.simpleicons.org/googledrive",
+      "guidelines": "https://about.google/brand-resource-center/",
+      "provenance": "simple-icons-derivative"
+    },
+    {
+      "provider": "gmail",
+      "backend_provider": "email",
+      "display_name": "Gmail",
+      "file": "gmail.png",
+      "dimensions": "256x256",
+      "sha256": "c2c83bb2f9eceb2ec5560dd2730ecf607ec1e82abb48fb8b143b744e9d11b764",
+      "source": "https://cdn.simpleicons.org/gmail",
+      "guidelines": "https://about.google/brand-resource-center/",
+      "provenance": "simple-icons-derivative"
+    },
+    {
+      "provider": "anthropic",
+      "backend_provider": "agent_session",
+      "display_name": "Anthropic",
+      "file": "anthropic.png",
+      "dimensions": "256x256",
+      "sha256": "49ad4533379bae2fc1f9099933cbbd5c8e6f11eeee739ff679849d260f57a3d6",
+      "source": "https://cdn.simpleicons.org/anthropic",
+      "guidelines": "https://www.anthropic.com/",
+      "provenance": "simple-icons-derivative"
+    }
+  ]
+}

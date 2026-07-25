@@ -62,10 +62,10 @@ V1 defaults:
 ```txt
 dev_embedding_provider = deterministic
 prod_embedding_provider = gemini
-prod_embedding_model = gemini-embedding-001
+prod_embedding_model = gemini-embedding-2
 prod_embedding_dimensions = 1536
 embedding_batch_size = 32
-embedding_version = gemini-1536-v1
+embedding_version = gemini2-1536-v1
 ```
 
 Rules:
@@ -189,7 +189,7 @@ Store versions on records and outputs:
 
 ```txt
 chunking_version = slack-thread-v1
-embedding_version = gemini-1536-v1
+embedding_version = gemini2-1536-v1
 retrieval_config_version = retrieval-v1
 ranker_version = ranker-v1
 gate_version = gate-v1
@@ -227,8 +227,8 @@ Qdrant payload should contain filterable metadata, not source text:
   "source_type": "slack_thread",
   "chunk_type": "thread_window",
   "chunking_version": "slack-thread-v1",
-  "embedding_model": "gemini-embedding-001",
-  "embedding_version": "gemini-1536-v1",
+  "embedding_model": "gemini-embedding-2",
+  "embedding_version": "gemini2-1536-v1",
   "status": "active"
 }
 ```
@@ -284,4 +284,3 @@ Promotion rule:
   metric without regressing citation accuracy, gate accuracy, or permission
   safety,
 - any config that reduces permission safety is rejected regardless of recall.
-

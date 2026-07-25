@@ -6,6 +6,10 @@ from cortex.contracts.entities import RawEvent
 from cortex.normalization.normalizers.agent_sessions import (
     normalize_agent_session_payload,
 )
+from cortex.normalization.normalizers.demo_snapshots import (
+    DEMO_EVENT_SUFFIXES,
+    normalize_demo_snapshot_payload,
+)
 from cortex.normalization.normalizers.fixtures import normalize_fixture_payload
 from cortex.normalization.normalizers.github import normalize_github_payload
 from cortex.normalization.normalizers.google_drive import normalize_google_drive_payload
@@ -36,6 +40,8 @@ class NormalizerRegistry:
         }
 
     def resolve(self, raw_event: RawEvent) -> Normalizer:
+        if raw_event.event_type.endswith(DEMO_EVENT_SUFFIXES):
+            return normalize_demo_snapshot_payload
         try:
             return self._normalizers[raw_event.provider]
         except KeyError as error:
