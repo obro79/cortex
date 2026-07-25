@@ -1,20 +1,19 @@
 from __future__ import annotations
 
+from typing import Any
+
+from cortex.utils.asyncio import maybe_await
+
 from .client import SlackWebClient
-from .repositories import (
-    InMemoryOAuthInstallationRepository,
-    InMemorySecretRefRepository,
-    InMemorySourceConnectionRepository,
-)
 
 
 class SlackSourceSelectionService:
     def __init__(
         self,
         *,
-        installations: InMemoryOAuthInstallationRepository,
-        secrets: InMemorySecretRefRepository,
-        source_connections: InMemorySourceConnectionRepository,
+        installations: Any,
+        secrets: Any,
+        source_connections: Any,
         client: SlackWebClient,
     ) -> None:
         self.installations = installations
@@ -25,8 +24,12 @@ class SlackSourceSelectionService:
     async def list_channels(
         self, *, oauth_installation_id: str, cursor: str | None = None
     ) -> dict[str, object]:
-        installation = self.installations.get_by_id(oauth_installation_id)
-        access_token = self.secrets.get_token(installation.secret_ref_id)
+        installation = await maybe_await(
+            self.installations.get_by_id(oauth_installation_id)
+        )
+        access_token = await maybe_await(
+            self.secrets.get_token(installation.secret_ref_id)
+        )
         page = await self.client.conversations_list(
             access_token=access_token,
             cursor=cursor,
@@ -43,23 +46,32 @@ class SlackSourceSelectionService:
         ]
         return {"ok": True, "channels": channels, "next_cursor": page.next_cursor}
 
-    def select_channels(
+    async def select_channels(
         self,
         *,
         workspace_id: str,
         oauth_installation_id: str,
         channels: list[dict[str, str]],
     ) -> dict[str, object]:
-        self.installations.get_by_id(oauth_installation_id)
-        selected = [
-            self.source_connections.upsert_channel(
-                workspace_id=workspace_id,
-                oauth_installation_id=oauth_installation_id,
-                channel_id=channel["id"],
-                display_name=channel.get("name"),
+        installation = await maybe_await(
+            self.installations.get_by_id(oauth_installation_id)
+        )
+        selected = []
+        for channel in channels:
+            selected.append(
+                await maybe_await(
+                    self.source_connections.upsert_channel(
+                        workspace_id=installation.workspace_id,
+                        oauth_installation_id=oauth_installation_id,
+                        channel_id=channel["id"],
+                        display_name=channel.get("name"),
+                        provider_metadata_json={
+                            "source_kind": "slack_channel",
+                            "team_id": installation.provider_workspace_id,
+                        },
+                    )
+                )
             )
-            for channel in channels
-        ]
         return {
             "ok": True,
             "source_connections": [

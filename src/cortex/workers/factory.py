@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -11,7 +12,11 @@ from cortex.chunking.service import ChunkingService
 from cortex.chunking.source_aware import SourceAwareChunker
 from cortex.config import Settings
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
+from cortex.embeddings.deterministic import (
+    DeterministicEmbeddingProvider,
+    EmbeddingProvider,
+)
+from cortex.embeddings.gemini import GeminiEmbeddingProvider
 from cortex.embeddings.publishers import EmbeddingPublisher
 from cortex.embeddings.repositories import SqlAlchemyEmbeddingRecordRepository
 from cortex.embeddings.service import EmbeddingService
@@ -26,6 +31,8 @@ from cortex.normalization.repositories import (
     SqlAlchemySourceObjectRepository,
 )
 from cortex.normalization.service import SourceNormalizationService
+from cortex.platform import build_ephemeral_cache
+from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
 from cortex.workers.kafka import KafkaPipelineConsumer, RetryablePipelineError
 
@@ -45,11 +52,18 @@ class SqlPipelineDispatcher:
         session_factory: async_sessionmaker[AsyncSession],
         payload_store: FilePayloadStore,
         event_bus: KafkaEventBus,
+        settings: Settings,
     ) -> None:
         self.session_factory = session_factory
         self.payload_store = payload_store
         self.event_bus = event_bus
+        self.settings = settings
         self.retrieval_config = load_retrieval_config()
+        self.cache = (
+            build_ephemeral_cache(settings)
+            if settings.cortex_model_rate_limit_enabled
+            else None
+        )
 
     async def aclose(self) -> None:
         await self.event_bus.stop()
@@ -106,11 +120,26 @@ class SqlPipelineDispatcher:
         embedding_service = EmbeddingService(
             source_chunks=source_chunks,
             embeddings=SqlAlchemyEmbeddingRecordRepository(session),
-            provider=DeterministicEmbeddingProvider(
-                dimensions=16,
-                version=self.retrieval_config.embeddings.version,
-            ),
+            provider=self._embedding_provider(),
             publisher=EmbeddingPublisher(event_bus),
+            model_rate_limiter=(
+                RateLimitService(self.cache)
+                if self.cache is not None
+                and self.settings.cortex_model_rate_limit_enabled
+                else None
+            ),
+            model_rate_limit_policy=(
+                RateLimitPolicy(
+                    name="embedding",
+                    limit=self.settings.cortex_model_rate_limit_requests,
+                    window_seconds=(
+                        self.settings.cortex_model_rate_limit_window_seconds
+                    ),
+                    namespace="model",
+                )
+                if self.settings.cortex_model_rate_limit_enabled
+                else None
+            ),
         )
         embeddings = EmbeddingWorkerSkeleton(embedding_service)
         if envelope.event_type == "raw_event.persisted":
@@ -124,6 +153,23 @@ class SqlPipelineDispatcher:
         elif envelope.event_type == "embedding.requested":
             return await embeddings.handle_embedding_requested(envelope)
         return None
+
+    def _embedding_provider(self) -> EmbeddingProvider:
+        embeddings = self.retrieval_config.embeddings
+        if self.settings.cortex_embedding_mode == "real":
+            return cast(
+                EmbeddingProvider,
+                GeminiEmbeddingProvider(
+                    api_key=self.settings.gemini_api_key,
+                    model=embeddings.prod_model,
+                    dimensions=embeddings.prod_dimensions,
+                    version=embeddings.version,
+                ),
+            )
+        return DeterministicEmbeddingProvider(
+            dimensions=16,
+            version=embeddings.version,
+        )
 
 
 def _result_status(result: object | None) -> str | None:
@@ -164,6 +210,7 @@ def create_kafka_pipeline_consumer(
         session_factory=session_factory,
         payload_store=FilePayloadStore(resolved.payload_store_path),
         event_bus=event_bus,
+        settings=settings,
     )
     return KafkaPipelineConsumer(
         bootstrap_servers=resolved.bootstrap_servers,

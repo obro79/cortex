@@ -10,7 +10,8 @@ from cortex.contracts.enums import SourceObjectStatus
 
 
 @pytest.fixture(autouse=True)
-def clear_settings_cache() -> Iterator[None]:
+def clear_settings_cache(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("CORTEX_DISABLE_DOTENV", "1")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

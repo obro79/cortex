@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from cortex.api.rate_limit import install_api_rate_limit
 from cortex.api.routes.dev import router as dev_router
 from cortex.api.routes.github import router as github_router
 from cortex.api.routes.health import router as health_router
@@ -22,15 +23,56 @@ from cortex.ingestion.durable import SessionRawEventIngestionService
 from cortex.ingestion.payloads import FilePayloadStore, PayloadStore
 from cortex.observability.logging import setup_logging
 from cortex.observability.tracing import init_tracing
+from cortex.platform import EphemeralCacheService, build_ephemeral_cache
+from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    ephemeral_cache: EphemeralCacheService | None = None,
+) -> FastAPI:
     resolved = settings or get_settings()
     setup_logging(resolved.cortex_log_level)
     init_tracing("cortex-api")
 
     app = FastAPI(title="Cortex API", version="0.1.0")
     app.state.settings = resolved
+    cache = ephemeral_cache
+    if cache is None and (
+        resolved.cortex_api_rate_limit_enabled
+        or resolved.cortex_provider_rate_limit_enabled
+    ):
+        cache = build_ephemeral_cache(resolved)
+    if resolved.cortex_api_rate_limit_enabled:
+        if cache is None:
+            raise RuntimeError("API rate limiting requires an ephemeral cache")
+        app.state.ephemeral_cache = cache
+        install_api_rate_limit(
+            app,
+            cache=cache,
+            policy=RateLimitPolicy(
+                name="api",
+                limit=resolved.cortex_api_rate_limit_requests,
+                window_seconds=resolved.cortex_api_rate_limit_window_seconds,
+                namespace="http",
+            ),
+        )
+    provider_rate_limiter = (
+        RateLimitService(cache)
+        if (cache is not None and resolved.cortex_provider_rate_limit_enabled)
+        else None
+    )
+    provider_rate_limit_policy = (
+        RateLimitPolicy(
+            name="provider",
+            limit=resolved.cortex_provider_rate_limit_requests,
+            window_seconds=resolved.cortex_provider_rate_limit_window_seconds,
+            namespace="provider",
+        )
+        if resolved.cortex_provider_rate_limit_enabled
+        else None
+    )
     app.include_router(health_router)
     if resolved.cortex_dev_workbench_enabled:
         app.state.dev_workbench = DevWorkbenchService()
@@ -38,10 +80,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     event_bus: EventBus | None = None
     payload_store: PayloadStore | None = None
     ingestion_service: Any | None = None
+    session_factory = None
     auto_drain_pipeline = True
     if resolved.cortex_event_bus == "kafka":
         if resolved.cortex_state_backend != "sql":
             raise ValueError("CORTEX_EVENT_BUS=kafka requires CORTEX_STATE_BACKEND=sql")
+        session_factory = create_sessionmaker(resolved.database_url)
         event_bus = KafkaEventBus(
             bootstrap_servers=resolved.kafka_bootstrap_servers,
         )
@@ -49,7 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             resolved.payload_store_path or "/var/lib/cortex/payloads"
         )
         ingestion_service = SessionRawEventIngestionService(
-            session_factory=create_sessionmaker(resolved.database_url),
+            session_factory=session_factory,
             payload_store=payload_store,
             event_bus=event_bus,
         )
@@ -64,6 +108,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload_store=payload_store,
             ingestion_service=ingestion_service,
             auto_drain_pipeline=auto_drain_pipeline,
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
+            settings=resolved,
+            session_factory=(
+                session_factory if resolved.cortex_state_backend == "sql" else None
+            ),
         )
         app.include_router(slack_router)
     if resolved.cortex_linear_connector_enabled:
@@ -78,6 +128,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             api_token_configured=bool(resolved.linear_api_token),
             api_token=resolved.linear_api_token,
             client=RealLinearClient(),
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
             **linear_kwargs,
         )
         app.include_router(linear_router)
@@ -97,6 +149,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             installation_token=resolved.github_installation_token,
             client=RealGitHubClient(),
             webhook_secret=resolved.github_webhook_secret,
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
             **github_kwargs,
         )
         app.include_router(github_router)
@@ -113,4 +167,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app(
+    Settings.model_construct(
+        cortex_event_bus="memory",
+        cortex_state_backend="memory",
+        cortex_slack_connector_enabled=False,
+    )
+)

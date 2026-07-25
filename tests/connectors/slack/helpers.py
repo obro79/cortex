@@ -28,7 +28,7 @@ async def installed_selected_services():
         state=str(started["state"]),
     )
     install_id = completed["installation"]["id"]
-    selected = services.sources.select_channels(
+    selected = await services.sources.select_channels(
         workspace_id="ws_1",
         oauth_installation_id=install_id,
         channels=[{"id": "C123", "name": "private-roadmap"}],

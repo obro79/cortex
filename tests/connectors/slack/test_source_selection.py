@@ -43,6 +43,29 @@ async def test_selected_channels_create_source_connections_without_names() -> No
     assert services.source_connections.get_selected_channel("ws_1", "C123") is not None
 
 
+async def test_selection_uses_installation_workspace_not_event_team_id() -> None:
+    services = create_slack_connector_services()
+    start = services.oauth.start_install(workspace_id="ws_internal")
+    complete = await services.oauth.complete_install(
+        code="code_123", state=str(start["state"])
+    )
+
+    selected = await services.sources.select_channels(
+        workspace_id="T_TEST",
+        oauth_installation_id=complete["installation"]["id"],
+        channels=[{"id": "C123", "name": "private-roadmap"}],
+    )
+
+    source = selected["source_connections"][0]
+    assert source["workspace_id"] == "ws_internal"
+    assert source["provider_metadata_json"]["team_id"] == "T_TEST"
+    assert services.source_connections.get_selected_channel("T_TEST", "C123") is None
+    assert (
+        services.source_connections.get_selected_channel("ws_internal", "C123")
+        is not None
+    )
+
+
 async def test_unselected_channel_lookup_returns_none() -> None:
     services, _install, _selected = await installed_selected_services()
 

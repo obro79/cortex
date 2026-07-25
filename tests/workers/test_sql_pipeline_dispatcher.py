@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from cortex.config import Settings
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
+from cortex.embeddings.gemini import GeminiEmbeddingProvider
 from cortex.events.in_memory import InMemoryEventBus
 from cortex.ingestion.payloads import FilePayloadStore
 from cortex.workers.factory import SqlPipelineDispatcher
@@ -79,6 +81,7 @@ async def test_sql_dispatcher_commits_before_publishing_buffered_events(
         session_factory=FakeSessionFactory(calls),  # type: ignore[arg-type]
         payload_store=FilePayloadStore(tmp_path),
         event_bus=FakeKafkaBus(calls),  # type: ignore[arg-type]
+        settings=Settings(),
     )
 
     async def fake_dispatch(session, incoming, event_bus) -> object:
@@ -99,6 +102,28 @@ async def test_sql_dispatcher_commits_before_publishing_buffered_events(
     ]
 
 
+def test_sql_dispatcher_uses_gemini_provider_when_embedding_mode_is_real(
+    tmp_path,
+) -> None:
+    dispatcher = SqlPipelineDispatcher(
+        session_factory=FakeSessionFactory([]),  # type: ignore[arg-type]
+        payload_store=FilePayloadStore(tmp_path),
+        event_bus=FakeKafkaBus([]),  # type: ignore[arg-type]
+        settings=Settings(
+            _env_file=None,
+            cortex_embedding_mode="real",
+            gemini_api_key="test-key",
+        ),
+    )
+
+    provider = dispatcher._embedding_provider()
+
+    assert isinstance(provider, GeminiEmbeddingProvider)
+    assert provider.api_key == "test-key"
+    assert provider.model == "gemini-embedding-001"
+    assert provider.dimensions == 1536
+
+
 async def test_sql_dispatcher_retryable_result_commits_state_but_not_publish_or_ack(
     tmp_path,
     monkeypatch,
@@ -108,6 +133,7 @@ async def test_sql_dispatcher_retryable_result_commits_state_but_not_publish_or_
         session_factory=FakeSessionFactory(calls),  # type: ignore[arg-type]
         payload_store=FilePayloadStore(tmp_path),
         event_bus=FakeKafkaBus(calls),  # type: ignore[arg-type]
+        settings=Settings(),
     )
 
     async def fake_dispatch(session, incoming, event_bus) -> object:
@@ -134,6 +160,7 @@ async def test_sql_dispatcher_downstream_publish_failure_is_retryable(
         session_factory=FakeSessionFactory(calls),  # type: ignore[arg-type]
         payload_store=FilePayloadStore(tmp_path),
         event_bus=FakeKafkaBus(calls, fail=True),  # type: ignore[arg-type]
+        settings=Settings(),
     )
 
     async def fake_dispatch(session, incoming, event_bus) -> object:

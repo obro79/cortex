@@ -37,11 +37,47 @@ class Settings(BaseSettings):
     cortex_repo_docs_connector_enabled: bool = Field(
         default=False, alias="CORTEX_REPO_DOCS_CONNECTOR_ENABLED"
     )
+    cortex_context_gate_blocking_enabled: bool = Field(
+        default=False, alias="CORTEX_CONTEXT_GATE_BLOCKING_ENABLED"
+    )
+    cortex_embedding_mode: Literal["deterministic", "real"] = Field(
+        default="deterministic", alias="CORTEX_EMBEDDING_MODE"
+    )
     cortex_event_bus: Literal["memory", "kafka"] = Field(
         default="memory", alias="CORTEX_EVENT_BUS"
     )
     cortex_state_backend: Literal["memory", "sql"] = Field(
         default="memory", alias="CORTEX_STATE_BACKEND"
+    )
+    cortex_cache_backend: Literal["memory", "redis"] = Field(
+        default="memory", alias="CORTEX_CACHE_BACKEND"
+    )
+    cortex_api_rate_limit_enabled: bool = Field(
+        default=False, alias="CORTEX_API_RATE_LIMIT_ENABLED"
+    )
+    cortex_api_rate_limit_requests: int = Field(
+        default=120, alias="CORTEX_API_RATE_LIMIT_REQUESTS"
+    )
+    cortex_api_rate_limit_window_seconds: int = Field(
+        default=60, alias="CORTEX_API_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    cortex_provider_rate_limit_enabled: bool = Field(
+        default=False, alias="CORTEX_PROVIDER_RATE_LIMIT_ENABLED"
+    )
+    cortex_provider_rate_limit_requests: int = Field(
+        default=60, alias="CORTEX_PROVIDER_RATE_LIMIT_REQUESTS"
+    )
+    cortex_provider_rate_limit_window_seconds: int = Field(
+        default=60, alias="CORTEX_PROVIDER_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    cortex_model_rate_limit_enabled: bool = Field(
+        default=False, alias="CORTEX_MODEL_RATE_LIMIT_ENABLED"
+    )
+    cortex_model_rate_limit_requests: int = Field(
+        default=120, alias="CORTEX_MODEL_RATE_LIMIT_REQUESTS"
+    )
+    cortex_model_rate_limit_window_seconds: int = Field(
+        default=60, alias="CORTEX_MODEL_RATE_LIMIT_WINDOW_SECONDS"
     )
     slack_client_id: str = Field(default="", alias="SLACK_CLIENT_ID")
     slack_client_secret: str = Field(default="", alias="SLACK_CLIENT_SECRET")
@@ -55,6 +91,13 @@ class Settings(BaseSettings):
         default="", alias="GITHUB_INSTALLATION_TOKEN"
     )
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    cortex_secret_encryption_key: str = Field(
+        default="", alias="CORTEX_SECRET_ENCRYPTION_KEY"
+    )
+    cortex_secret_encryption_key_version: str = Field(
+        default="local-v1", alias="CORTEX_SECRET_ENCRYPTION_KEY_VERSION"
+    )
     database_url: str = Field(default="", alias="DATABASE_URL")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
     kafka_consumer_group: str = Field(
@@ -80,7 +123,14 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         yaml_file = os.getenv("CORTEX_CONFIG_FILE")
+        include_dotenv = not os.getenv("CORTEX_DISABLE_DOTENV")
         if not yaml_file:
+            if not include_dotenv:
+                return (
+                    init_settings,
+                    env_settings,
+                    file_secret_settings,
+                )
             return (
                 init_settings,
                 env_settings,
@@ -88,6 +138,13 @@ class Settings(BaseSettings):
                 file_secret_settings,
             )
         yaml_settings = YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file)
+        if not include_dotenv:
+            return (
+                init_settings,
+                env_settings,
+                yaml_settings,
+                file_secret_settings,
+            )
         return (
             init_settings,
             env_settings,

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cortex.chunking.config import load_retrieval_config
 from cortex.chunking.publishers import SourceChunkPublisher
 from cortex.chunking.repositories import InMemorySourceChunkRepository
 from cortex.chunking.service import ChunkingService
 from cortex.chunking.source_aware import SourceAwareChunker
+from cortex.config import Settings
 from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
 from cortex.embeddings.publishers import EmbeddingPublisher
 from cortex.embeddings.repositories import InMemoryEmbeddingRecordRepository
@@ -25,6 +28,8 @@ from cortex.normalization.repositories import (
     InMemorySourceObjectRepository,
 )
 from cortex.normalization.service import SourceNormalizationService
+from cortex.platform.rate_limits import RateLimitPolicy, RateLimitService
+from cortex.security.tokens import TokenCipher
 from cortex.workers.embeddings import EmbeddingWorkerSkeleton
 from cortex.workers.pipeline import InMemoryPipelineDispatcher
 
@@ -39,6 +44,12 @@ from .repositories import (
     InMemorySecretRefRepository,
     InMemorySourceConnectionRepository,
     InMemoryWebhookDeliveryRepository,
+    SqlAlchemyBackfillJobRepository,
+    SqlAlchemyOAuthInstallationRepository,
+    SqlAlchemyProviderCursorRepository,
+    SqlAlchemySecretRefRepository,
+    SqlAlchemySourceConnectionRepository,
+    SqlAlchemyWebhookDeliveryRepository,
 )
 from .sources import SlackSourceSelectionService
 from .webhooks import SlackWebhookService, SlackWebhookVerifier
@@ -55,12 +66,12 @@ class SlackConnectorServices:
     webhooks: SlackWebhookService
     backfill: SlackBackfillService
     health: SlackHealthService
-    secrets: InMemorySecretRefRepository
-    installations: InMemoryOAuthInstallationRepository
-    source_connections: InMemorySourceConnectionRepository
-    deliveries: InMemoryWebhookDeliveryRepository
-    cursors: InMemoryProviderCursorRepository
-    backfills: InMemoryBackfillJobRepository
+    secrets: Any
+    installations: Any
+    source_connections: Any
+    deliveries: Any
+    cursors: Any
+    backfills: Any
     raw_events: InMemoryRawEventRepository
     payload_store: PayloadStore
     source_objects: InMemorySourceObjectRepository
@@ -84,13 +95,42 @@ def create_slack_connector_services(
     payload_store: PayloadStore | None = None,
     ingestion_service: SlackIngestionService | None = None,
     auto_drain_pipeline: bool = True,
+    provider_rate_limiter: RateLimitService | None = None,
+    provider_rate_limit_policy: RateLimitPolicy | None = None,
+    settings: Settings | None = None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> SlackConnectorServices:
-    secrets = InMemorySecretRefRepository()
-    installations = InMemoryOAuthInstallationRepository()
-    source_connections = InMemorySourceConnectionRepository()
-    deliveries = InMemoryWebhookDeliveryRepository()
-    cursors = InMemoryProviderCursorRepository()
-    backfills = InMemoryBackfillJobRepository()
+    secrets: Any
+    installations: Any
+    source_connections: Any
+    deliveries: Any
+    cursors: Any
+    backfills: Any
+    if settings is not None and settings.cortex_state_backend == "sql":
+        if session_factory is None:
+            raise ValueError("SQL Slack connector requires a session factory")
+        if not settings.cortex_secret_encryption_key:
+            raise ValueError(
+                "CORTEX_SECRET_ENCRYPTION_KEY is required for SQL Slack OAuth"
+            )
+        cipher = TokenCipher(settings.cortex_secret_encryption_key)
+        secrets = SqlAlchemySecretRefRepository(
+            session_factory,
+            cipher=cipher,
+            key_version=settings.cortex_secret_encryption_key_version,
+        )
+        installations = SqlAlchemyOAuthInstallationRepository(session_factory)
+        source_connections = SqlAlchemySourceConnectionRepository(session_factory)
+        deliveries = SqlAlchemyWebhookDeliveryRepository(session_factory)
+        cursors = SqlAlchemyProviderCursorRepository(session_factory)
+        backfills = SqlAlchemyBackfillJobRepository(session_factory)
+    else:
+        secrets = InMemorySecretRefRepository()
+        installations = InMemoryOAuthInstallationRepository()
+        source_connections = InMemorySourceConnectionRepository()
+        deliveries = InMemoryWebhookDeliveryRepository()
+        cursors = InMemoryProviderCursorRepository()
+        backfills = InMemoryBackfillJobRepository()
     resolved_event_bus = event_bus or InMemoryEventBus()
     raw_events = InMemoryRawEventRepository()
     resolved_payload_store = payload_store or InMemoryPayloadStore()
@@ -160,6 +200,7 @@ def create_slack_connector_services(
         ),
         webhooks=SlackWebhookService(
             deliveries=deliveries,
+            installations=installations,
             source_connections=source_connections,
             ingestion=ingestion,
             verifier=SlackWebhookVerifier(signing_secret),
@@ -172,6 +213,8 @@ def create_slack_connector_services(
             cursors=cursors,
             backfills=backfills,
             ingestion=ingestion,
+            provider_rate_limiter=provider_rate_limiter,
+            provider_rate_limit_policy=provider_rate_limit_policy,
         ),
         health=SlackHealthService(
             installations=installations,

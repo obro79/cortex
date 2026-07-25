@@ -36,6 +36,34 @@ async def test_webhook_verifies_signature_and_persists_selected_message() -> Non
     assert "private message text" not in str(event.payload)
 
 
+async def test_webhook_resolves_workspace_from_slack_team_id() -> None:
+    services, _install, _selected = await installed_selected_services()
+    body = {
+        "team_id": "T_TEST",
+        "event_id": "EvTeam",
+        "event_time": 1_700_000_000,
+        "event": {
+            "type": "message",
+            "team": "T_TEST",
+            "channel": "C123",
+            "ts": "1700000000.000200",
+        },
+    }
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    headers = signed_headers(body, "test-secret")
+
+    result = await services.webhooks.handle(
+        workspace_id="T_TEST",
+        body=raw,
+        timestamp=headers["x-slack-request-timestamp"],
+        signature=headers["x-slack-signature"],
+    )
+
+    assert result.status == "persisted"
+    event = services.event_bus.list_events()[0]
+    assert event.workspace_id == "ws_1"
+
+
 async def test_webhook_duplicate_retry_noops() -> None:
     services, _install, _selected = await installed_selected_services()
     body = {

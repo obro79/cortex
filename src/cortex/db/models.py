@@ -638,6 +638,31 @@ class SecretRefRecord(Base):
     )
 
 
+class SecretMaterialRecord(Base):
+    __tablename__ = "secret_materials"
+    __table_args__ = (
+        UniqueConstraint("secret_ref_id", name="uq_secret_materials_secret_ref"),
+        Index("ix_secret_materials_workspace_provider", "workspace_id", "provider"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    secret_ref_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    encryption_scheme: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    ciphertext: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class OAuthInstallationRecord(Base):
     __tablename__ = "oauth_installations"
     __table_args__ = (
@@ -822,6 +847,26 @@ class ProviderCursorRecord(Base):
     metadata_json: Mapped[dict[str, object]] = mapped_column(
         JSON, nullable=False, default=dict
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class SchedulerLeaseRecord(Base):
+    __tablename__ = "scheduler_leases"
+
+    job_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

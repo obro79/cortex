@@ -96,7 +96,7 @@ async def select_sources(request: Request, body: dict[str, Any]) -> dict[str, ob
     channels = body.get("channels", [])
     if not workspace_id or not installation_id or not isinstance(channels, list):
         raise HTTPException(status_code=422, detail="invalid source selection")
-    return get_slack_services(request).sources.select_channels(
+    return await get_slack_services(request).sources.select_channels(
         workspace_id=workspace_id,
         oauth_installation_id=installation_id,
         channels=[dict(channel) for channel in channels],
@@ -181,4 +181,4 @@ async def backfill_source(
 
 @router.get("/health/{workspace_id}")
 async def slack_health(request: Request, workspace_id: str) -> dict[str, object]:
-    return get_slack_services(request).health.workspace_health(workspace_id)
+    return await get_slack_services(request).health.workspace_health(workspace_id)

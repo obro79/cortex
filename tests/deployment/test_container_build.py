@@ -12,6 +12,7 @@ def test_dockerfile_uses_lockfile_and_non_root_runtime() -> None:
 
     assert "COPY pyproject.toml uv.lock README.md" in dockerfile
     assert "uv sync --locked --no-dev" in dockerfile
+    assert "COPY config ./config" in dockerfile
     assert "useradd --create-home --uid 10001" in dockerfile
     assert "USER cortex" in dockerfile
 

@@ -12,6 +12,12 @@ from cortex.ingestion.payloads import InMemoryPayloadStore, PayloadStore
 from cortex.ingestion.publisher import RawEventPublisher
 from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
 from cortex.ingestion.service import IngestionResult, RawEventIngestionService
+from cortex.platform.rate_limits import (
+    RateLimitExceededError,
+    RateLimitPolicy,
+    RateLimitService,
+    RateLimitSubject,
+)
 
 from .client import EmptyGitHubClient, GitHubClient
 
@@ -33,6 +39,8 @@ class GitHubConnectorServices:
     payload_store: PayloadStore = field(default_factory=InMemoryPayloadStore)
     event_bus: EventBus = field(default_factory=InMemoryEventBus)
     ingestion: GitHubIngestionService | None = None
+    provider_rate_limiter: RateLimitService | None = None
+    provider_rate_limit_policy: RateLimitPolicy | None = None
 
     def __post_init__(self) -> None:
         if self.ingestion is None:
@@ -117,6 +125,22 @@ class GitHubConnectorServices:
     ) -> dict[str, object]:
         if not self.installation_token:
             return {"ok": False, "error": "github_installation_token_required"}
+        if self.provider_rate_limiter and self.provider_rate_limit_policy:
+            try:
+                self.provider_rate_limiter.enforce(
+                    self.provider_rate_limit_policy,
+                    RateLimitSubject(
+                        workspace_id=workspace_id,
+                        user_id="provider:github",
+                        client_id="github-live-backfill",
+                    ),
+                )
+            except RateLimitExceededError as exc:
+                return {
+                    "ok": False,
+                    "error": "rate_limited",
+                    "retry_after_seconds": exc.decision.retry_after_seconds,
+                }
         backfill = await self.client.backfill_repository(
             access_token=self.installation_token,
             owner=owner,

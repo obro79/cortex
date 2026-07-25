@@ -4,6 +4,9 @@ from cortex.config import Settings
 def test_settings_defaults_load_without_services() -> None:
     settings = Settings()
     assert settings.cortex_env == "local"
+    assert settings.cortex_cache_backend == "memory"
+    assert settings.cortex_embedding_mode == "deterministic"
+    assert settings.cortex_context_gate_blocking_enabled is False
     assert settings.database_url == ""
 
 
@@ -19,6 +22,7 @@ def test_yaml_config_file_loads_with_env_override(tmp_path, monkeypatch) -> None
             [
                 "cortex_event_bus: kafka",
                 "cortex_state_backend: sql",
+                "cortex_cache_backend: redis",
                 "kafka_bootstrap_servers: yaml:9092",
             ]
         )
@@ -30,6 +34,7 @@ def test_yaml_config_file_loads_with_env_override(tmp_path, monkeypatch) -> None
 
     assert settings.cortex_event_bus == "kafka"
     assert settings.cortex_state_backend == "sql"
+    assert settings.cortex_cache_backend == "redis"
     assert settings.kafka_bootstrap_servers == "env:9092"
 
 
