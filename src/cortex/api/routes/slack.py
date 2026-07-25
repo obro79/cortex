@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 from cortex.connectors.slack.service import SlackConnectorServices
+from cortex.events.in_memory import InMemoryEventBus
 
 router = APIRouter(prefix="/connectors/slack", tags=["slack"])
 
@@ -111,7 +112,8 @@ async def slack_events(
 ) -> dict[str, object]:
     workspace_id = request.query_params.get("workspace_id", "ws_1")
     body = await request.body()
-    result = await get_slack_services(request).webhooks.handle(
+    services = get_slack_services(request)
+    result = await services.webhooks.handle(
         workspace_id=workspace_id,
         body=body,
         timestamp=x_slack_request_timestamp,
@@ -120,10 +122,24 @@ async def slack_events(
     )
     if not result.ok:
         raise HTTPException(status_code=401, detail={"error": result.error})
+    drain = None
+    if services.auto_drain_pipeline:
+        if not isinstance(services.event_bus, InMemoryEventBus):
+            raise HTTPException(
+                status_code=500, detail="pipeline drain requires memory bus"
+            )
+        drain = await services.pipeline.drain(services.event_bus)
     payload: dict[str, object] = {"ok": True, "status": result.status}
     if result.challenge is not None:
         payload["challenge"] = result.challenge
     payload["raw_event_created"] = result.raw_event_created
+    if drain is not None:
+        payload["pipeline"] = {
+            "processed_event_count": drain.processed_event_count,
+            "normalization_count": drain.normalization_count,
+            "chunking_count": drain.chunking_count,
+            "embedding_count": drain.embedding_count,
+        }
     return payload
 
 
@@ -134,17 +150,33 @@ async def backfill_source(
     workspace_id = str(body.get("workspace_id", ""))
     if not workspace_id:
         raise HTTPException(status_code=422, detail="workspace_id is required")
-    result = await get_slack_services(request).backfill.backfill_source(
+    services = get_slack_services(request)
+    result = await services.backfill.backfill_source(
         workspace_id=workspace_id,
         source_connection_id=source_connection_id,
     )
-    return {
+    drain = None
+    if services.auto_drain_pipeline:
+        if not isinstance(services.event_bus, InMemoryEventBus):
+            raise HTTPException(
+                status_code=500, detail="pipeline drain requires memory bus"
+            )
+        drain = await services.pipeline.drain(services.event_bus)
+    response: dict[str, object] = {
         "ok": result.ok,
         "job": result.job.model_dump(mode="json"),
         "raw_events_created": result.raw_events_created,
         "duplicates": result.duplicates,
         "cursor_value": result.cursor_value,
     }
+    if drain is not None:
+        response["pipeline"] = {
+            "processed_event_count": drain.processed_event_count,
+            "normalization_count": drain.normalization_count,
+            "chunking_count": drain.chunking_count,
+            "embedding_count": drain.embedding_count,
+        }
+    return response
 
 
 @router.get("/health/{workspace_id}")

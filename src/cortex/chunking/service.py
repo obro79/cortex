@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.normalization.repositories import (
-    InMemorySourceFileRepository,
-    InMemorySourceObjectRepository,
-)
+from cortex.utils.asyncio import maybe_await
 
 from .publishers import SourceChunkPublisher
-from .repositories import InMemorySourceChunkRepository
 from .source_aware import SourceAwareChunker
 
 
@@ -25,9 +22,9 @@ class ChunkingService:
     def __init__(
         self,
         *,
-        source_objects: InMemorySourceObjectRepository,
-        source_files: InMemorySourceFileRepository,
-        source_chunks: InMemorySourceChunkRepository,
+        source_objects: Any,
+        source_files: Any,
+        source_chunks: Any,
         chunker: SourceAwareChunker,
         publisher: SourceChunkPublisher,
     ) -> None:
@@ -42,13 +39,17 @@ class ChunkingService:
     ) -> ChunkingServiceResult:
         if envelope.event_type != "source_object.upserted":
             return ChunkingServiceResult("ignored", reason="unsupported_event_type")
-        source_object = self.source_objects.get_by_id(envelope.subject.id)
+        source_object = await maybe_await(
+            self.source_objects.get_by_id(envelope.subject.id)
+        )
         chunks = self.chunker.chunks_for_source_object(source_object)
-        upserts = self.source_chunks.upsert_many(chunks)
-        self.source_chunks.mark_stale_replaced_by(
-            workspace_id=source_object.workspace_id,
-            source_object_id=source_object.id,
-            active_ids={result.record.id for result in upserts},
+        upserts = await maybe_await(self.source_chunks.upsert_many(chunks))
+        await maybe_await(
+            self.source_chunks.mark_stale_replaced_by(
+                workspace_id=source_object.workspace_id,
+                source_object_id=source_object.id,
+                active_ids={result.record.id for result in upserts},
+            )
         )
         published = 0
         for result in upserts:
@@ -67,12 +68,18 @@ class ChunkingService:
     ) -> ChunkingServiceResult:
         if envelope.event_type != "source_file.fetched":
             return ChunkingServiceResult("ignored", reason="unsupported_event_type")
-        source_file = self.source_files.get_by_id(envelope.subject.id)
+        source_file = await maybe_await(
+            self.source_files.get_by_id(envelope.subject.id)
+        )
         if source_file.source_object_id is None:
             return ChunkingServiceResult("ignored", reason="missing_source_object")
-        source_object = self.source_objects.get_by_id(source_file.source_object_id)
-        upserts = self.source_chunks.upsert_many(
-            self.chunker.chunks_for_source_file(source_object, source_file)
+        source_object = await maybe_await(
+            self.source_objects.get_by_id(source_file.source_object_id)
+        )
+        upserts = await maybe_await(
+            self.source_chunks.upsert_many(
+                self.chunker.chunks_for_source_file(source_object, source_file)
+            )
         )
         published = 0
         for result in upserts:

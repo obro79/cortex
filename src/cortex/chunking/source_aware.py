@@ -39,6 +39,9 @@ class SourceAwareChunker:
     def chunks_for_source_object(
         self, source_object: SourceObject
     ) -> list[SourceChunk]:
+        if source_object.object_type == "slack_thread":
+            return self._chunks_for_slack_thread(source_object)
+
         title = source_object.title or source_object.external_object_id
         source_kind = source_object.metadata_json.get(
             "source_kind", source_object.object_type
@@ -56,6 +59,34 @@ class SourceAwareChunker:
                 chunk_index=0,
                 text=text,
                 created_from_hash=source_object.content_hash,
+            )
+        ]
+
+    def _chunks_for_slack_thread(
+        self, source_object: SourceObject
+    ) -> list[SourceChunk]:
+        if not source_object.content_text:
+            return []
+        return [
+            self._chunk(
+                source_object=source_object,
+                source_file=None,
+                chunk_type="slack_message",
+                chunk_index=0,
+                text=source_object.content_text,
+                created_from_hash=source_object.content_hash,
+                citation_label="Slack thread",
+                metadata_json={
+                    "object_type": source_object.object_type,
+                    "source_kind": source_object.metadata_json.get("source_kind"),
+                    "channel_id_hash": source_object.metadata_json.get(
+                        "channel_id_hash"
+                    ),
+                    "message_ts": source_object.metadata_json.get("message_ts"),
+                    "thread_ts": source_object.metadata_json.get("thread_ts"),
+                    "has_files": source_object.metadata_json.get("has_files"),
+                    "has_links": source_object.metadata_json.get("has_links"),
+                },
             )
         ]
 
@@ -97,6 +128,8 @@ class SourceAwareChunker:
         chunk_index: int,
         text: str,
         created_from_hash: str | None,
+        citation_label: str | None = None,
+        metadata_json: dict[str, object] | None = None,
     ) -> SourceChunk:
         now = datetime.now(UTC)
         return SourceChunk(
@@ -118,9 +151,11 @@ class SourceAwareChunker:
             text_hash=sha256_digest(text.encode()),
             token_count=len(text.split()),
             chunking_version=self.config.version,
-            citation_label=source_object.title or source_object.external_object_id,
+            citation_label=citation_label
+            or source_object.title
+            or source_object.external_object_id,
             citation_url=source_object.canonical_url,
-            metadata_json={"object_type": source_object.object_type},
+            metadata_json=metadata_json or {"object_type": source_object.object_type},
             status=SourceChunkStatus.ACTIVE,
             created_from_hash=created_from_hash,
             created_at=now,

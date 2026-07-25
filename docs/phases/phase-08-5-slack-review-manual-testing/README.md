@@ -13,10 +13,13 @@ Artifacts:
 - [`run-logs/2026-05-08-data-flow-map.md`](run-logs/2026-05-08-data-flow-map.md)
 - [`run-logs/2026-05-08-manual-walkthrough.md`](run-logs/2026-05-08-manual-walkthrough.md)
 - [`run-logs/2026-05-08-redaction-and-failure-drills.md`](run-logs/2026-05-08-redaction-and-failure-drills.md)
+- [`run-logs/2026-05-08-kafka-slack-e2e-smoke.md`](run-logs/2026-05-08-kafka-slack-e2e-smoke.md)
 
 Goal: stop after Phase 8 and manually prove the Slack connector is safe,
 understandable, replayable, and useful before starting Phase 9.
 
-Current decision: `BLOCKED`. Live Slack OAuth, backfill, and webhooks are proven
-through raw-event persistence, but live Slack raw events do not yet reach
-retrieval/context-gate evidence.
+Current decision: `UNBLOCKED_FOR_PHASE_9`. Live-shaped Slack backfill and Event
+Subscription payloads now normalize into Slack source objects, chunk into
+retrievable Slack evidence, flow through Apache Kafka and durable Postgres state
+to deterministic embeddings, and can drive context-gate checks without copying
+Slack message text into pipeline event payloads. Gemini remains deferred.

@@ -43,3 +43,4 @@ Current top-level ADRs:
 - [ADR-019: Containerized Services Kubernetes Compatible](019-containerized-services-kubernetes-compatible/)
 - [ADR-020: Layered Platform Components](020-layered-platform-components/)
 - [ADR-021: Distributed Coordination Without Custom Leader](021-distributed-coordination-without-custom-leader/)
+- [ADR-022: Apache Kafka Runtime](022-apache-kafka-runtime/)

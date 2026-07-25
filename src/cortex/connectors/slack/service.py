@@ -1,12 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
+from cortex.chunking.config import load_retrieval_config
+from cortex.chunking.publishers import SourceChunkPublisher
+from cortex.chunking.repositories import InMemorySourceChunkRepository
+from cortex.chunking.service import ChunkingService
+from cortex.chunking.source_aware import SourceAwareChunker
+from cortex.embeddings.deterministic import DeterministicEmbeddingProvider
+from cortex.embeddings.publishers import EmbeddingPublisher
+from cortex.embeddings.repositories import InMemoryEmbeddingRecordRepository
+from cortex.embeddings.service import EmbeddingService
+from cortex.events.bus import EventBus
 from cortex.events.in_memory import InMemoryEventBus
-from cortex.ingestion.payloads import InMemoryPayloadStore
+from cortex.ingestion.payloads import InMemoryPayloadStore, PayloadStore
 from cortex.ingestion.publisher import RawEventPublisher
-from cortex.ingestion.raw_events import InMemoryRawEventRepository
-from cortex.ingestion.service import RawEventIngestionService
+from cortex.ingestion.raw_events import InMemoryRawEventRepository, RawEventInput
+from cortex.ingestion.service import IngestionResult, RawEventIngestionService
+from cortex.normalization.publishers import SourceFilePublisher, SourceObjectPublisher
+from cortex.normalization.repositories import (
+    InMemoryRelationshipSeedRepository,
+    InMemorySourceFileRepository,
+    InMemorySourceObjectRepository,
+)
+from cortex.normalization.service import SourceNormalizationService
+from cortex.workers.embeddings import EmbeddingWorkerSkeleton
+from cortex.workers.pipeline import InMemoryPipelineDispatcher
 
 from .backfill import SlackBackfillService
 from .client import EmptySlackWebClient, RealSlackWebClient, SlackWebClient
@@ -24,6 +44,10 @@ from .sources import SlackSourceSelectionService
 from .webhooks import SlackWebhookService, SlackWebhookVerifier
 
 
+class SlackIngestionService(Protocol):
+    async def ingest(self, item: RawEventInput) -> IngestionResult: ...
+
+
 @dataclass(frozen=True)
 class SlackConnectorServices:
     oauth: SlackOAuthService
@@ -38,7 +62,14 @@ class SlackConnectorServices:
     cursors: InMemoryProviderCursorRepository
     backfills: InMemoryBackfillJobRepository
     raw_events: InMemoryRawEventRepository
-    event_bus: InMemoryEventBus
+    payload_store: PayloadStore
+    source_objects: InMemorySourceObjectRepository
+    source_files: InMemorySourceFileRepository
+    source_chunks: InMemorySourceChunkRepository
+    embeddings: InMemoryEmbeddingRecordRepository
+    pipeline: InMemoryPipelineDispatcher
+    event_bus: EventBus
+    auto_drain_pipeline: bool = True
 
 
 def create_slack_connector_services(
@@ -49,6 +80,10 @@ def create_slack_connector_services(
     redirect_uri: str = "",
     oauth_client: SlackOAuthClient | None = None,
     slack_client: SlackWebClient | None = None,
+    event_bus: EventBus | None = None,
+    payload_store: PayloadStore | None = None,
+    ingestion_service: SlackIngestionService | None = None,
+    auto_drain_pipeline: bool = True,
 ) -> SlackConnectorServices:
     secrets = InMemorySecretRefRepository()
     installations = InMemoryOAuthInstallationRepository()
@@ -56,12 +91,18 @@ def create_slack_connector_services(
     deliveries = InMemoryWebhookDeliveryRepository()
     cursors = InMemoryProviderCursorRepository()
     backfills = InMemoryBackfillJobRepository()
-    event_bus = InMemoryEventBus()
+    resolved_event_bus = event_bus or InMemoryEventBus()
     raw_events = InMemoryRawEventRepository()
-    ingestion = RawEventIngestionService(
+    resolved_payload_store = payload_store or InMemoryPayloadStore()
+    source_objects = InMemorySourceObjectRepository()
+    source_files = InMemorySourceFileRepository()
+    source_chunks = InMemorySourceChunkRepository()
+    embedding_records = InMemoryEmbeddingRecordRepository()
+    retrieval_config = load_retrieval_config()
+    ingestion = ingestion_service or RawEventIngestionService(
         repository=raw_events,
-        payload_store=InMemoryPayloadStore(),
-        publisher=RawEventPublisher(event_bus),
+        payload_store=resolved_payload_store,
+        publisher=RawEventPublisher(resolved_event_bus),
     )
     resolved_oauth_client = oauth_client
     if resolved_oauth_client is None and client_id and client_secret and redirect_uri:
@@ -73,6 +114,36 @@ def create_slack_connector_services(
     resolved_slack_client = slack_client
     if resolved_slack_client is None and client_id and client_secret and redirect_uri:
         resolved_slack_client = RealSlackWebClient()
+    normalization = SourceNormalizationService(
+        raw_events=raw_events,
+        payload_store=resolved_payload_store,
+        source_objects=source_objects,
+        source_files=source_files,
+        relationship_seeds=InMemoryRelationshipSeedRepository(),
+        source_object_publisher=SourceObjectPublisher(resolved_event_bus),
+        source_file_publisher=SourceFilePublisher(resolved_event_bus),
+    )
+    chunking = ChunkingService(
+        source_objects=source_objects,
+        source_files=source_files,
+        source_chunks=source_chunks,
+        chunker=SourceAwareChunker(retrieval_config.chunking),
+        publisher=SourceChunkPublisher(resolved_event_bus),
+    )
+    embedding_service = EmbeddingService(
+        source_chunks=source_chunks,
+        embeddings=embedding_records,
+        provider=DeterministicEmbeddingProvider(
+            dimensions=16,
+            version=retrieval_config.embeddings.version,
+        ),
+        publisher=EmbeddingPublisher(resolved_event_bus),
+    )
+    pipeline = InMemoryPipelineDispatcher(
+        normalization=normalization,
+        chunking=chunking,
+        embeddings=EmbeddingWorkerSkeleton(embedding_service),
+    )
     return SlackConnectorServices(
         oauth=SlackOAuthService(
             secrets=secrets,
@@ -115,5 +186,12 @@ def create_slack_connector_services(
         cursors=cursors,
         backfills=backfills,
         raw_events=raw_events,
-        event_bus=event_bus,
+        payload_store=resolved_payload_store,
+        source_objects=source_objects,
+        source_files=source_files,
+        source_chunks=source_chunks,
+        embeddings=embedding_records,
+        pipeline=pipeline,
+        event_bus=resolved_event_bus,
+        auto_drain_pipeline=auto_drain_pipeline,
     )

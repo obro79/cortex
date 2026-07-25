@@ -1,22 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from cortex.contracts.enums import RawEventStatus
 from cortex.contracts.pipeline_events import PipelineEventEnvelope
-from cortex.ingestion.payloads import InMemoryPayloadStore, PayloadNotFoundError
-from cortex.ingestion.raw_events import (
-    InMemoryRawEventRepository,
-    RawEventNotFoundError,
-)
+from cortex.ingestion.payloads import PayloadNotFoundError, PayloadStore
+from cortex.ingestion.raw_events import RawEventNotFoundError
+from cortex.utils.asyncio import maybe_await
 
 from .publishers import SourceFilePublisher, SourceObjectPublisher
 from .registry import NormalizerRegistry
-from .repositories import (
-    InMemoryRelationshipSeedRepository,
-    InMemorySourceFileRepository,
-    InMemorySourceObjectRepository,
-)
 
 
 @dataclass(frozen=True)
@@ -34,11 +28,11 @@ class SourceNormalizationService:
     def __init__(
         self,
         *,
-        raw_events: InMemoryRawEventRepository,
-        payload_store: InMemoryPayloadStore,
-        source_objects: InMemorySourceObjectRepository,
-        source_files: InMemorySourceFileRepository,
-        relationship_seeds: InMemoryRelationshipSeedRepository,
+        raw_events: Any,
+        payload_store: PayloadStore,
+        source_objects: Any,
+        source_files: Any,
+        relationship_seeds: Any,
         source_object_publisher: SourceObjectPublisher,
         source_file_publisher: SourceFilePublisher,
         registry: NormalizerRegistry | None = None,
@@ -67,7 +61,9 @@ class SourceNormalizationService:
             )
 
         try:
-            raw_event = self.raw_events.get_by_id(envelope.subject.id)
+            raw_event = await maybe_await(
+                self.raw_events.get_by_id(envelope.subject.id)
+            )
         except RawEventNotFoundError:
             return NormalizationServiceResult(
                 status="retryable", reason="raw_event_not_found"
@@ -79,16 +75,20 @@ class SourceNormalizationService:
 
         try:
             if raw_event.status != RawEventStatus.PROCESSED:
-                self.raw_events.mark_processing(raw_event.id)
+                await maybe_await(self.raw_events.mark_processing(raw_event.id))
             if raw_event.payload_ref is None:
                 raise PayloadNotFoundError("<missing>")
             payload_bytes = self.payload_store.get(raw_event.payload_ref)
             normalizer = self.registry.resolve(raw_event)
             result = normalizer(raw_event, payload_bytes)
-            object_results = self.source_objects.upsert_many(result.source_objects)
-            file_results = self.source_files.upsert_many(result.source_files)
-            seed_results = self.relationship_seeds.upsert_many(
-                result.relationship_seeds
+            object_results = await maybe_await(
+                self.source_objects.upsert_many(result.source_objects)
+            )
+            file_results = await maybe_await(
+                self.source_files.upsert_many(result.source_files)
+            )
+            seed_results = await maybe_await(
+                self.relationship_seeds.upsert_many(result.relationship_seeds)
             )
 
             published_count = 0
@@ -124,7 +124,7 @@ class SourceNormalizationService:
                 )
                 published_count += 1
             if raw_event.status != RawEventStatus.PROCESSED:
-                self.raw_events.mark_processed(raw_event.id)
+                await maybe_await(self.raw_events.mark_processed(raw_event.id))
             return NormalizationServiceResult(
                 status="processed",
                 raw_event_id=raw_event.id,
@@ -134,22 +134,26 @@ class SourceNormalizationService:
                 published_count=published_count,
             )
         except Exception as error:
-            current = self.raw_events.get_by_id(raw_event.id)
+            current = await maybe_await(self.raw_events.get_by_id(raw_event.id))
             if current.attempt_count + 1 >= self.max_attempts:
-                self.raw_events.mark_deadlettered(
-                    raw_event.id,
-                    "normalization_failed",
-                    str(error),
+                await maybe_await(
+                    self.raw_events.mark_deadlettered(
+                        raw_event.id,
+                        "normalization_failed",
+                        str(error),
+                    )
                 )
                 return NormalizationServiceResult(
                     status="deadlettered",
                     raw_event_id=raw_event.id,
                     reason="normalization_failed",
                 )
-            self.raw_events.mark_failed_retryable(
-                raw_event.id,
-                "normalization_failed",
-                str(error),
+            await maybe_await(
+                self.raw_events.mark_failed_retryable(
+                    raw_event.id,
+                    "normalization_failed",
+                    str(error),
+                )
             )
             return NormalizationServiceResult(
                 status="retryable",

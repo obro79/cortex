@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from cortex.contracts.entities import SourceChunk
 from cortex.contracts.enums import SourceChunkStatus
+from cortex.db.models import SourceChunkRecord
 
 
 @dataclass(frozen=True)
@@ -103,3 +107,177 @@ class InMemorySourceChunkRepository:
         )
         self._records[existing.id] = updated
         return ChunkUpsertResult(updated, "updated")
+
+
+def source_chunk_from_record(record: SourceChunkRecord) -> SourceChunk:
+    return SourceChunk(
+        id=record.id,
+        workspace_id=record.workspace_id,
+        source_object_id=record.source_object_id,
+        source_file_id=record.source_file_id,
+        chunk_type=record.chunk_type,
+        chunk_index=record.chunk_index,
+        text=record.text,
+        text_hash=record.text_hash,
+        token_count=record.token_count,
+        chunking_version=record.chunking_version,
+        citation_label=record.citation_label,
+        citation_url=record.citation_url,
+        metadata_json=record.metadata_json,
+        status=SourceChunkStatus(record.status),
+        created_from_hash=record.created_from_hash,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+class SqlAlchemySourceChunkRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def upsert_many(self, records: list[SourceChunk]) -> list[ChunkUpsertResult]:
+        results: list[ChunkUpsertResult] = []
+        for record in records:
+            results.append(await self._upsert(record))
+        await self.session.flush()
+        return results
+
+    async def get_by_id(self, source_chunk_id: str) -> SourceChunk:
+        record = await self.session.get(SourceChunkRecord, source_chunk_id)
+        if record is None:
+            raise KeyError(source_chunk_id)
+        return source_chunk_from_record(record)
+
+    async def list_by_source_object(
+        self, workspace_id: str, source_object_id: str
+    ) -> list[SourceChunk]:
+        result = await self.session.execute(
+            select(SourceChunkRecord)
+            .where(
+                SourceChunkRecord.workspace_id == workspace_id,
+                SourceChunkRecord.source_object_id == source_object_id,
+            )
+            .order_by(SourceChunkRecord.chunk_index, SourceChunkRecord.id)
+        )
+        return [source_chunk_from_record(record) for record in result.scalars()]
+
+    async def search_fts(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        status: SourceChunkStatus = SourceChunkStatus.ACTIVE,
+        chunking_version: str | None = None,
+    ) -> list[SourceChunk]:
+        statement = select(SourceChunkRecord).where(
+            SourceChunkRecord.workspace_id == workspace_id,
+            SourceChunkRecord.status == SourceChunkStatus(status).value,
+        )
+        if chunking_version is not None:
+            statement = statement.where(
+                SourceChunkRecord.chunking_version == chunking_version
+            )
+        result = await self.session.execute(statement)
+        terms = query.lower().split()
+        return [
+            source_chunk_from_record(record)
+            for record in result.scalars()
+            if all(term in record.text.lower() for term in terms)
+        ]
+
+    async def mark_stale_replaced_by(
+        self,
+        *,
+        workspace_id: str,
+        source_object_id: str,
+        active_ids: set[str],
+    ) -> list[SourceChunk]:
+        result = await self.session.execute(
+            select(SourceChunkRecord).where(
+                SourceChunkRecord.workspace_id == workspace_id,
+                SourceChunkRecord.source_object_id == source_object_id,
+                SourceChunkRecord.status == SourceChunkStatus.ACTIVE.value,
+            )
+        )
+        stale: list[SourceChunk] = []
+        now = datetime.now(UTC)
+        for record in result.scalars():
+            if record.id in active_ids:
+                continue
+            record.status = SourceChunkStatus.STALE.value
+            record.updated_at = now
+            stale.append(source_chunk_from_record(record))
+        await self.session.flush()
+        return stale
+
+    async def _upsert(self, record: SourceChunk) -> ChunkUpsertResult:
+        existing = await self._get_by_identity(record)
+        if existing is None:
+            self.session.add(self._record_from_source_chunk(record))
+            return ChunkUpsertResult(record, "inserted")
+        if (
+            existing.text_hash == record.text_hash
+            and existing.created_from_hash == record.created_from_hash
+            and existing.status == SourceChunkStatus.ACTIVE
+        ):
+            return ChunkUpsertResult(existing, "noop")
+        updated = record.model_copy(
+            update={"id": existing.id, "created_at": existing.created_at}
+        )
+        await self._apply_update(updated)
+        return ChunkUpsertResult(updated, "updated")
+
+    async def _get_by_identity(self, chunk: SourceChunk) -> SourceChunk | None:
+        result = await self.session.execute(
+            select(SourceChunkRecord).where(
+                SourceChunkRecord.workspace_id == chunk.workspace_id,
+                SourceChunkRecord.source_object_id == chunk.source_object_id,
+                SourceChunkRecord.source_file_id == chunk.source_file_id,
+                SourceChunkRecord.chunk_type == chunk.chunk_type,
+                SourceChunkRecord.chunk_index == chunk.chunk_index,
+                SourceChunkRecord.chunking_version == chunk.chunking_version,
+            )
+        )
+        record = result.scalar_one_or_none()
+        return source_chunk_from_record(record) if record else None
+
+    async def _apply_update(self, chunk: SourceChunk) -> None:
+        record = await self.session.get(SourceChunkRecord, chunk.id)
+        if record is None:
+            raise KeyError(chunk.id)
+        record.source_object_id = chunk.source_object_id
+        record.source_file_id = chunk.source_file_id
+        record.chunk_type = chunk.chunk_type
+        record.chunk_index = chunk.chunk_index
+        record.text = chunk.text
+        record.text_hash = chunk.text_hash
+        record.token_count = chunk.token_count
+        record.chunking_version = chunk.chunking_version
+        record.citation_label = chunk.citation_label
+        record.citation_url = chunk.citation_url
+        record.metadata_json = dict(chunk.metadata_json)
+        record.status = SourceChunkStatus(chunk.status).value
+        record.created_from_hash = chunk.created_from_hash
+        record.updated_at = chunk.updated_at
+        await self.session.flush()
+
+    def _record_from_source_chunk(self, chunk: SourceChunk) -> SourceChunkRecord:
+        return SourceChunkRecord(
+            id=chunk.id,
+            workspace_id=chunk.workspace_id,
+            source_object_id=chunk.source_object_id,
+            source_file_id=chunk.source_file_id,
+            chunk_type=chunk.chunk_type,
+            chunk_index=chunk.chunk_index,
+            text=chunk.text,
+            text_hash=chunk.text_hash,
+            token_count=chunk.token_count,
+            chunking_version=chunk.chunking_version,
+            citation_label=chunk.citation_label,
+            citation_url=chunk.citation_url,
+            metadata_json=dict(chunk.metadata_json),
+            status=SourceChunkStatus(chunk.status).value,
+            created_from_hash=chunk.created_from_hash,
+            created_at=chunk.created_at,
+            updated_at=chunk.updated_at,
+        )

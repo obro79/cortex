@@ -5,9 +5,10 @@ import hmac
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 
 from cortex.ingestion.raw_events import RawEventInput
-from cortex.ingestion.service import RawEventIngestionService
+from cortex.ingestion.service import IngestionResult
 
 from .repositories import (
     InMemorySourceConnectionRepository,
@@ -45,13 +46,17 @@ class SlackWebhookVerifier:
         return hmac.compare_digest(f"v0={digest}", signature)
 
 
+class SlackWebhookIngestionService(Protocol):
+    async def ingest(self, item: RawEventInput) -> IngestionResult: ...
+
+
 class SlackWebhookService:
     def __init__(
         self,
         *,
         deliveries: InMemoryWebhookDeliveryRepository,
         source_connections: InMemorySourceConnectionRepository,
-        ingestion: RawEventIngestionService,
+        ingestion: SlackWebhookIngestionService,
         verifier: SlackWebhookVerifier,
     ) -> None:
         self.deliveries = deliveries

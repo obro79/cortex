@@ -6,8 +6,10 @@ Accepted.
 
 ## Decision
 
-Use Kafka-compatible infrastructure as the durable event backbone for ingestion,
+Use Kafka infrastructure as the durable event backbone for ingestion,
 normalization, chunking, embedding, indexing, extraction, and replay.
+
+ADR-022 narrows the runtime implementation to Apache Kafka.
 
 ## What It Is
 
@@ -57,7 +59,7 @@ Examples:
 
 - Kafka adds operational complexity.
 - Workers need idempotency and offset/retry discipline.
-- Local development needs a Kafka-compatible dependency.
+- Local development needs a Kafka dependency.
 
 ## Failure Modes
 
@@ -76,4 +78,3 @@ Examples:
 
 `cortexg` has an `event_queue` abstraction and event topics. Cortex keeps the
 topic lifecycle but upgrades the queue into Kafka-compatible infrastructure.
-

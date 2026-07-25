@@ -9,11 +9,11 @@ Reviewed commits:
 
 ## Summary
 
-The live Slack connector now reaches the raw-event boundary through OAuth,
-source selection, backfill, and Slack Events API webhooks. Live Slack data does
-not yet reach production source objects, chunks, retrieval, or context gate.
-Those downstream paths still depend on deterministic fixture normalizers and
-fixture retrieval.
+The live Slack connector reaches the raw-event boundary through OAuth, source
+selection, backfill, and Slack Events API webhooks. Live-shaped Slack message
+payloads now continue through normalization, source-aware chunking, retrieval,
+deterministic embedding, and context gate using deterministic embeddings plus
+FTS. Gemini is not required for Phase 8.5 validation.
 
 ## Edges
 
@@ -26,17 +26,28 @@ fixture retrieval.
 | Backfill | `SlackBackfillService.backfill_source` -> `RealSlackWebClient.conversation_history` | `BackfillJob`, `RawEvent`, `raw_event.persisted`, `ProviderCursor` | per Slack event idempotency key | pipeline event payload is pointer-only; raw payload boundary still stores Slack payload | rate limits mark retrying; permanent provider errors deadletter | `tests/connectors/slack/test_backfill_service.py`, `tests/connectors/slack/test_provider_cursor.py` |
 | Files/links from backfill | `derived_raw_events_for_message` | `RawEvent` with `file_shared` / `link_shared` | message/file/link derived keys | file names/private URLs are removed; hashes/metadata remain | bad metadata does not block base message event construction | `tests/connectors/slack/test_file_ingestion.py` |
 | Webhook verification | `SlackWebhookVerifier.verify` -> `SlackWebhookService.handle` | `WebhookDelivery`, optional `RawEvent` | provider event id / delivery id | verification happens before payload processing | bad signature or stale timestamp rejects before persistence | `tests/connectors/slack/test_webhook_service.py`, `tests/api/test_slack_webhooks.py` |
-| Webhook selected-channel intake | `SlackWebhookService.handle` | `WebhookDelivery`, `RawEvent`, `raw_event.persisted` | Slack event id; duplicate delivery no-ops | selected-channel event is persisted only after allowlist lookup; API response is content-free | unselected channel returns `ignored_unselected`; unsupported event returns `ignored` | `tests/connectors/slack/test_webhook_service.py` |
+| Webhook selected-channel intake | `SlackWebhookService.handle` -> `InMemoryPipelineDispatcher.drain` | `WebhookDelivery`, `RawEvent`, `raw_event.persisted`, downstream pipeline events | Slack event id; duplicate delivery no-ops | selected-channel event is persisted only after allowlist lookup; API response is content-free | unselected channel returns `ignored_unselected`; unsupported event returns `ignored` | `tests/connectors/slack/test_webhook_service.py`, `tests/api/test_slack_webhooks.py` |
+| Backfill selected-channel intake | `SlackBackfillService.backfill_source` -> `InMemoryPipelineDispatcher.drain` | `BackfillJob`, `RawEvent`, `raw_event.persisted`, downstream pipeline events | per Slack event idempotency key | backfill API returns counts/cursor only, not message text | duplicates count without rewriting payloads | `tests/connectors/slack/test_backfill_service.py` |
 | Replay | `RawEventReplayService.replay_by_id` | `raw_event.persisted` replay envelope | raw event id | event envelope remains pointer-only | deleted raw events cannot replay | `tests/ingestion/test_raw_event_replay.py` |
-| Normalization | `NormalizerRegistry.resolve` | `SourceObject`, `SourceFile`, relationship seeds | provider/external object identity | fixture normalizer redacts content from metadata | unsupported or malformed payload can deadletter | `tests/normalization/*`, `tests/workers/test_normalization_worker.py` |
-| Retrieval/gate | `cortex.dev` fixtures, retrieval, context gate services | `EvidencePack`, `ContextGateResult` | deterministic fixture IDs | fixture citation output is content-safe | fixture gate blocks stale Redis-vs-Postgres conflict | `tests/retrieval/*`, `tests/context_gate/*`, `tests/dev/*` |
+| Slack normalization | `normalize_slack_payload` via `NormalizerRegistry.resolve` | `SourceObject` with object type `slack_thread` | workspace/team/channel/thread/message timestamp | source object `content_text` stores Slack message text only as retrieval input; metadata keeps channel id/hash, user id, timestamps, counts, and file/link flags | malformed message payload can deadletter; file/link-only events emit no source object | `tests/normalization/test_slack_normalizer.py`, `tests/connectors/slack/test_live_retrieval_gate.py` |
+| Slack chunking | `SourceAwareChunker.chunks_for_source_object` | `SourceChunk` with type `slack_message` | source object/chunk type/index/version | chunk metadata omits message text; citation label is content-free `Slack thread` | duplicate replay noops existing chunks | `tests/chunking/test_source_aware_chunker.py`, `tests/connectors/slack/test_live_retrieval_gate.py` |
+| Deterministic embedding | `EmbeddingWorkerSkeleton.handle_source_chunk_upserted` -> `EmbeddingService.queue_for_chunk` -> `EmbeddingWorkerSkeleton.handle_embedding_requested` | `EmbeddingRecord`, `embedding.requested`, `embedding.completed` | workspace/source chunk/embedding version | embedding events carry hashes/provider/model/dimensions only, not Slack text | duplicate chunk/version noops existing embedding request | `tests/workers/test_embedding_worker.py`, `tests/connectors/slack/test_live_retrieval_gate.py` |
+| Retrieval/gate | `RetrievalService`, `ContextGateService` | `EvidencePack`, `ContextGateResult` | deterministic request/evidence/gate IDs | pipeline events remain pointer-only; Slack snippets appear only in retrieval evidence output | permission filters and gate failure behavior remain unchanged | `tests/retrieval/*`, `tests/context_gate/*`, `tests/connectors/slack/test_live_retrieval_gate.py` |
 
-## Blocking Gap
+## Phase 8.5 Unblock Evidence
 
-The Slack provider is currently registered to the fixture normalizer path:
-`NormalizerRegistry` maps `"slack"` to `normalize_fixture_payload`. Live Slack
-raw payloads do not yet have a dedicated normalizer/chunker/index path, so live
-Slack data cannot be manually confirmed in production retrieval or context gate.
+Added validation:
 
-Phase 9 should not start until this is fixed or explicitly descoped into a
-Phase 8 follow-up.
+- live Slack message payload normalizes to a stable `slack_thread` source object,
+- backfill-shaped Slack message payload normalizes through the same path,
+- file/link-only Slack events do not emit private file URLs or raw file metadata,
+- signed Slack webhook route automatically drains raw-event, source-object,
+  chunk, and embedding events,
+- selected-channel webhook raw event flows through normalization, chunking,
+  deterministic embedding, retrieval, and context gate,
+- duplicate replay does not create duplicate Slack chunks,
+- pipeline event payloads remain content-free.
+
+Remaining manual limitation: this update validates live-shaped payloads in the
+local in-memory pipeline. It does not re-run the external Slack/ngrok manual
+walkthrough from scratch.
